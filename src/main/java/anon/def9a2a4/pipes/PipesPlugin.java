@@ -27,15 +27,10 @@ import java.io.File;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.UUID;
+import java.util.*;
 import java.util.stream.Stream;
 
 import org.bukkit.entity.Player;
-import org.bstats.bukkit.Metrics;
 
 public class PipesPlugin extends JavaPlugin {
 
@@ -47,21 +42,21 @@ public class PipesPlugin extends JavaPlugin {
     private final Map<String, Map<BlockFace, ItemStack>> displayItems = new HashMap<>();
     private final Map<String, Map<BlockFace, ItemStack>> directionalDisplayItems = new HashMap<>();
 
+    // Use WeakHashMap to allow worlds to be garbage collected if unloaded
+    private final WeakHashMap<World, PipeManager> pipeManager = new WeakHashMap<>();
+
     private FileConfiguration displayConfigRaw;
     private PipeConfig pipeConfig;
     private DisplayConfig displayConfig;
     private VariantRegistry variantRegistry;
-    private PipeManager pipeManager;
     private RecipeManager recipeManager;
+    private WorldManager worldManager;
     private RecipeUnlockListener recipeUnlockListener;
     private CauldronConversionListener cauldronConversionListener;
     private ConversionRecipeCraftListener conversionRecipeCraftListener;
 
     @Override
     public void onEnable() {
-        int pluginId = 28844;
-        new Metrics(this, pluginId);
-
         variantRegistry = new VariantRegistry(this);
         loadConfigs();
 
@@ -70,34 +65,29 @@ public class PipesPlugin extends JavaPlugin {
         }
 
         loadItems();
-        pipeManager = new PipeManager(this);
 
         recipeManager = new RecipeManager(this);
         recipeManager.registerRecipes();
 
+        worldManager = new WorldManager(this, pipeManager);
         recipeUnlockListener = new RecipeUnlockListener(this, recipeManager);
         cauldronConversionListener = new CauldronConversionListener(this);
         conversionRecipeCraftListener = new ConversionRecipeCraftListener(this, recipeManager);
         getServer().getPluginManager().registerEvents(new PipeListener(this, pipeManager), this);
+        getServer().getPluginManager().registerEvents(worldManager, this);
         getServer().getPluginManager().registerEvents(recipeUnlockListener, this);
         getServer().getPluginManager().registerEvents(cauldronConversionListener, this);
         getServer().getPluginManager().registerEvents(conversionRecipeCraftListener, this);
-
-        // Scan all loaded worlds for existing pipes (handles server restart)
-        for (World world : Bukkit.getWorlds()) {
-            pipeManager.scanForExistingPipes(world);
-        }
-
-        pipeManager.startTasks();
 
         getLogger().info("Pipes enabled!");
     }
 
     @Override
     public void onDisable() {
-        if (pipeManager != null) {
-            pipeManager.shutdown();
+        for (PipeManager manager : pipeManager.values()) {
+            manager.shutdown();
         }
+        pipeManager.clear();
         getLogger().info("Pipes disabled!");
     }
 
@@ -122,7 +112,9 @@ public class PipesPlugin extends JavaPlugin {
                 loadConfigs();
                 loadItems();
                 recipeManager.registerRecipes();
-                pipeManager.restartTasks();
+                for (PipeManager manager : pipeManager.values()) {
+                    manager.restartTasks();
+                }
 
                 // Re-create unlock listener with new config and sync online players
                 recipeUnlockListener = new RecipeUnlockListener(this, recipeManager);
@@ -227,7 +219,9 @@ public class PipesPlugin extends JavaPlugin {
 
                 int totalRemoved = 0;
                 for (World world : Bukkit.getWorlds()) {
-                    int removed = pipeManager.cleanupOrphanedDisplays(world);
+                    PipeManager manager = pipeManager.get(world);
+                    if (manager == null) continue;
+                    int removed = manager.cleanupOrphanedDisplays();
                     if (removed > 0) {
                         sender.sendMessage(Component.text("Removed " + removed + " orphaned display(s) in " + world.getName())
                                 .color(NamedTextColor.GRAY));
@@ -256,25 +250,34 @@ public class PipesPlugin extends JavaPlugin {
                         .color(NamedTextColor.GOLD));
 
                 // Pipe counts by variant
-                Map<String, Integer> counts = pipeManager.getPipeCountsByVariant();
-                int totalPipes = pipeManager.getTotalPipeCount();
+                for (World world : Bukkit.getWorlds()) {
+                    PipeManager manager = pipeManager.get(world);
+                    if (manager == null) continue;
+                    Map<String, Integer> counts = manager.getPipeCountsByVariant();
+                    int totalPipes = manager.getTotalPipeCount();
 
-                if (counts.isEmpty()) {
-                    sender.sendMessage(Component.text("No pipes registered.")
-                            .color(NamedTextColor.GRAY));
-                } else {
-                    sender.sendMessage(Component.text("Registered pipes: " + totalPipes)
-                            .color(NamedTextColor.WHITE));
-                    for (Map.Entry<String, Integer> entry : counts.entrySet()) {
-                        sender.sendMessage(Component.text("  " + entry.getKey() + ": " + entry.getValue())
+                    sender.sendMessage(Component.text(world.getName() + ":")
+                            .color(NamedTextColor.GOLD));
+
+                    if (counts.isEmpty()) {
+                        sender.sendMessage(Component.text(" No pipes registered.")
                                 .color(NamedTextColor.GRAY));
+                    } else {
+                        sender.sendMessage(Component.text(" Registered pipes: " + totalPipes)
+                                .color(NamedTextColor.WHITE));
+                        for (Map.Entry<String, Integer> entry : counts.entrySet()) {
+                            sender.sendMessage(Component.text("   " + entry.getKey() + ": " + entry.getValue())
+                                    .color(NamedTextColor.GRAY));
+                        }
                     }
                 }
 
                 // Orphaned display counts
                 int totalOrphaned = 0;
                 for (World world : Bukkit.getWorlds()) {
-                    int orphaned = pipeManager.countOrphanedDisplays(world);
+                    PipeManager manager = pipeManager.get(world);
+                    if (manager == null) continue;
+                    int orphaned = manager.countOrphanedDisplays();
                     if (orphaned > 0) {
                         sender.sendMessage(Component.text("Orphaned displays in " + world.getName() + ": " + orphaned)
                                 .color(NamedTextColor.YELLOW));
@@ -301,7 +304,9 @@ public class PipesPlugin extends JavaPlugin {
 
                 int totalDeleted = 0;
                 for (World world : Bukkit.getWorlds()) {
-                    int deleted = pipeManager.deleteAllPipes(world);
+                    PipeManager manager = pipeManager.get(world);
+                    if (manager == null) continue;
+                    int deleted = manager.deleteAllPipes();
                     if (deleted > 0) {
                         sender.sendMessage(Component.text("Deleted " + deleted + " pipe(s) in " + world.getName())
                                 .color(NamedTextColor.GRAY));
