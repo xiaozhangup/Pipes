@@ -250,7 +250,13 @@ public class PipesPlugin extends JavaPlugin {
                         .color(NamedTextColor.GOLD));
 
                 // Pipe counts by variant
-                for (World world : Bukkit.getWorlds()) {
+                List<World> worlds = new ArrayList<>();
+                if (sender instanceof Player player) {
+                    worlds.add(player.getWorld());
+                } else {
+                    worlds.addAll(Bukkit.getWorlds());
+                }
+                for (World world : worlds) {
                     PipeManager manager = pipeManager.get(world);
                     if (manager == null) continue;
                     Map<String, Integer> counts = manager.getPipeCountsByVariant();
@@ -274,7 +280,7 @@ public class PipesPlugin extends JavaPlugin {
 
                 // Orphaned display counts
                 int totalOrphaned = 0;
-                for (World world : Bukkit.getWorlds()) {
+                for (World world : worlds) {
                     PipeManager manager = pipeManager.get(world);
                     if (manager == null) continue;
                     int orphaned = manager.countOrphanedDisplays();
@@ -301,18 +307,27 @@ public class PipesPlugin extends JavaPlugin {
                             .color(NamedTextColor.RED));
                     return true;
                 }
+                if (!(sender instanceof Player player)) {
+                    sender.sendMessage(Component.text("This command can only be used by players.")
+                            .color(NamedTextColor.RED));
+                    return true;
+                }
 
                 int totalDeleted = 0;
-                for (World world : Bukkit.getWorlds()) {
-                    PipeManager manager = pipeManager.get(world);
-                    if (manager == null) continue;
-                    int deleted = manager.deleteAllPipes();
-                    if (deleted > 0) {
-                        sender.sendMessage(Component.text("Deleted " + deleted + " pipe(s) in " + world.getName())
-                                .color(NamedTextColor.GRAY));
-                    }
-                    totalDeleted += deleted;
+                World world = player.getWorld();
+                PipeManager manager = pipeManager.get(world);
+                if (manager == null) {
+                    sender.sendMessage(Component.text("No pipe manager found for world: " + world.getName())
+                            .color(NamedTextColor.RED));
+                    return true;
                 }
+
+                int deleted = manager.deleteAllPipes();
+                if (deleted > 0) {
+                    sender.sendMessage(Component.text("Deleted " + deleted + " pipe(s) in " + world.getName())
+                            .color(NamedTextColor.GRAY));
+                }
+                totalDeleted += deleted;
 
                 if (totalDeleted > 0) {
                     sender.sendMessage(Component.text("Deleted " + totalDeleted + " pipe(s) total.")
@@ -338,7 +353,7 @@ public class PipesPlugin extends JavaPlugin {
         }
 
         if (args.length == 1) {
-            return Stream.of("help", "reload", "give", "recipes", "cleanup", "info", "delete_all")
+            return Stream.of("help", "reload", "give", "recipes", "cleanup", "info"/*, "delete_all" */)
                     .filter(s -> s.toLowerCase().startsWith(args[0].toLowerCase()))
                     .toList();
         }

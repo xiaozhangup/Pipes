@@ -37,13 +37,16 @@ public class PipeManager {
     private record DestinationResult(Location destination, Location lastPipeLocation, int minItemsPerTransfer) {}
 
     private final PipesPlugin plugin;
+    private final int offset;
     private final World world;
+    private final Random random = new Random();
     private final Map<Location, PipeData> pipes = new HashMap<>();
     private final Map<Location, Long> lastTransferTime = new HashMap<>();
 
     public PipeManager(PipesPlugin plugin, World world) {
         this.plugin = plugin;
         this.world = world;
+        this.offset = random.nextInt(21);
     }
 
     public void startTasks() {
@@ -52,7 +55,7 @@ public class PipeManager {
         world.submitCyclicalTask(
                 "pipes_transfer",
                 () -> {
-                    if (Bukkit.getServer().getCurrentTick() % fastestInterval == 0) {
+                    if (offset + Bukkit.getServer().getCurrentTick() % fastestInterval == 0) {
                         this.transferAllPipes();
                     }
                 }
@@ -63,7 +66,7 @@ public class PipeManager {
             world.submitCyclicalTask(
                     "pipes_particles",
                     () -> {
-                        if (Bukkit.getServer().getCurrentTick() % particleInterval == 0) {
+                        if (offset + Bukkit.getServer().getCurrentTick() % particleInterval == 0) {
                             this.spawnDebugParticles();
                         }
                     }
@@ -469,7 +472,6 @@ public class PipeManager {
             case SOUTH -> new AxisAngle4f((float) Math.PI, 0, 1, 0);
             case EAST -> new AxisAngle4f((float) -Math.PI / 2, 0, 1, 0);
             case WEST -> new AxisAngle4f((float) Math.PI / 2, 0, 1, 0);
-            case UP, DOWN -> new AxisAngle4f(0, 0, 1, 0);
             default -> new AxisAngle4f(0, 0, 1, 0);
         };
     }
@@ -657,7 +659,6 @@ public class PipeManager {
             }
 
             // Spawn item with velocity set during spawn to avoid dropItem's default velocity
-            Random random = new Random();
             double baseSpeed = (finalFacing == BlockFace.DOWN) ? 0 : 0.25;
             double randomSpread = 0.05;
             final ItemStack finalTransfer = toTransfer;
