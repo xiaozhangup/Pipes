@@ -3,6 +3,8 @@ package anon.def9a2a4.pipes;
 import net.kyori.adventure.text.Component;
 import org.bukkit.NamespacedKey;
 
+import java.util.List;
+
 /**
  * Represents a pipe variant loaded from configuration.
  * Each variant defines its transfer rates, recipes, and references a texture set by ID.
@@ -12,17 +14,20 @@ public class PipeVariant {
     private final String id;
     private final BehaviorType behaviorType;
     private final Component displayName;
+    private final List<Component> lore;
     private final int transferIntervalTicks;
     private final int itemsPerTransfer;
     private final NamespacedKey pdcKey;
     private final String textureSetId;
 
     public PipeVariant(String id, BehaviorType behaviorType, Component displayName,
+                       List<Component> lore,
                        int transferIntervalTicks, int itemsPerTransfer,
                        NamespacedKey pdcKey, String textureSetId) {
         this.id = id;
         this.behaviorType = behaviorType;
         this.displayName = displayName;
+        this.lore = lore;
         this.transferIntervalTicks = transferIntervalTicks;
         this.itemsPerTransfer = itemsPerTransfer;
         this.pdcKey = pdcKey;
@@ -39,6 +44,10 @@ public class PipeVariant {
 
     public Component getDisplayName() {
         return displayName;
+    }
+
+    public List<Component> getLore() {
+        return lore;
     }
 
     public int getTransferIntervalTicks() {

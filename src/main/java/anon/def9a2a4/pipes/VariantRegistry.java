@@ -1,6 +1,7 @@
 package anon.def9a2a4.pipes;
 
 import anon.def9a2a4.pipes.config.DisplayConfig;
+import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.minimessage.MiniMessage;
 import org.bukkit.Material;
 import org.bukkit.NamespacedKey;
@@ -72,6 +73,13 @@ public class VariantRegistry {
         String nameStr = section.getString("display-name", "<white>" + id);
         var displayName = MiniMessage.miniMessage().deserialize(nameStr);
 
+        // Parse lore
+        List<String> loreList = section.getStringList("lore");
+        var lore = new ArrayList<Component>(loreList.size());
+        for (String loreLine : loreList) {
+            lore.add(MiniMessage.miniMessage().deserialize(loreLine));
+        }
+
         // Parse transfer settings
         int intervalTicks = section.getInt("transfer.interval-ticks", 10);
         int itemsPerTransfer = section.getInt("transfer.items-per-transfer", 1);
@@ -88,7 +96,7 @@ public class VariantRegistry {
         // Create namespaced key
         NamespacedKey pdcKey = new NamespacedKey(plugin, id);
 
-        return new PipeVariant(id, behavior, displayName, intervalTicks,
+        return new PipeVariant(id, behavior, displayName, lore, intervalTicks,
                 itemsPerTransfer, pdcKey, textureSetId);
     }
 

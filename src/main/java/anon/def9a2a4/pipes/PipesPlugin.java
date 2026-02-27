@@ -521,6 +521,9 @@ public class PipesPlugin extends JavaPlugin {
 
         meta.displayName(variant.getDisplayName()
                 .decoration(TextDecoration.ITALIC, false));
+        meta.lore(variant.getLore().stream()
+                .map(line -> line.decoration(TextDecoration.ITALIC, false))
+                .toList());
 
         meta.getPersistentDataContainer().set(variant.getPdcKey(), PersistentDataType.BYTE, (byte) 1);
 
