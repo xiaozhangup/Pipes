@@ -49,11 +49,11 @@ public class PipesPlugin extends JavaPlugin {
     private PipeConfig pipeConfig;
     private DisplayConfig displayConfig;
     private VariantRegistry variantRegistry;
-    private RecipeManager recipeManager;
+//    private RecipeManager recipeManager;
     private WorldManager worldManager;
-    private RecipeUnlockListener recipeUnlockListener;
+//    private RecipeUnlockListener recipeUnlockListener;
     private CauldronConversionListener cauldronConversionListener;
-    private ConversionRecipeCraftListener conversionRecipeCraftListener;
+//    private ConversionRecipeCraftListener conversionRecipeCraftListener;
 
     @Override
     public void onEnable() {
@@ -66,18 +66,18 @@ public class PipesPlugin extends JavaPlugin {
 
         loadItems();
 
-        recipeManager = new RecipeManager(this);
-        recipeManager.registerRecipes();
+//        recipeManager = new RecipeManager(this);
+//        recipeManager.registerRecipes();
 
         worldManager = new WorldManager(this, pipeManager);
-        recipeUnlockListener = new RecipeUnlockListener(this, recipeManager);
+//        recipeUnlockListener = new RecipeUnlockListener(this, recipeManager);
         cauldronConversionListener = new CauldronConversionListener(this);
-        conversionRecipeCraftListener = new ConversionRecipeCraftListener(this, recipeManager);
+//        conversionRecipeCraftListener = new ConversionRecipeCraftListener(this, recipeManager);
         getServer().getPluginManager().registerEvents(new PipeListener(this, pipeManager), this);
         getServer().getPluginManager().registerEvents(worldManager, this);
-        getServer().getPluginManager().registerEvents(recipeUnlockListener, this);
+//        getServer().getPluginManager().registerEvents(recipeUnlockListener, this);
         getServer().getPluginManager().registerEvents(cauldronConversionListener, this);
-        getServer().getPluginManager().registerEvents(conversionRecipeCraftListener, this);
+//        getServer().getPluginManager().registerEvents(conversionRecipeCraftListener, this);
 
         getLogger().info("Pipes enabled!");
     }
@@ -107,18 +107,18 @@ public class PipesPlugin extends JavaPlugin {
                 }
 
                 // Unregister old recipes
-                recipeManager.unregisterRecipes();
+//                recipeManager.unregisterRecipes();
 
                 loadConfigs();
                 loadItems();
-                recipeManager.registerRecipes();
+//                recipeManager.registerRecipes();
                 for (PipeManager manager : pipeManager.values()) {
                     manager.restartTasks();
                 }
 
                 // Re-create unlock listener with new config and sync online players
-                recipeUnlockListener = new RecipeUnlockListener(this, recipeManager);
-                recipeUnlockListener.syncAllOnlinePlayers();
+//                recipeUnlockListener = new RecipeUnlockListener(this, recipeManager);
+//                recipeUnlockListener.syncAllOnlinePlayers();
 
                 // Reload cauldron conversions
                 cauldronConversionListener.loadConversions();
@@ -141,7 +141,7 @@ public class PipesPlugin extends JavaPlugin {
                     return true;
                 }
 
-                recipeManager.discoverAllRecipes(player);
+//                recipeManager.discoverAllRecipes(player);
                 sender.sendMessage(Component.text("Unlocked all Pipes recipes!")
                         .color(NamedTextColor.GREEN));
                 return true;
@@ -353,7 +353,7 @@ public class PipesPlugin extends JavaPlugin {
         }
 
         if (args.length == 1) {
-            return Stream.of("help", "reload", "give", "recipes", "cleanup", "info"/*, "delete_all" */)
+            return Stream.of("help", "reload", "give"/*, "recipes" */, "cleanup", "info"/*, "delete_all" */)
                     .filter(s -> s.toLowerCase().startsWith(args[0].toLowerCase()))
                     .toList();
         }
