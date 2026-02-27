@@ -10,12 +10,7 @@ import org.bukkit.entity.ItemDisplay;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
-import org.bukkit.event.block.BlockBreakEvent;
-import org.bukkit.event.block.BlockBurnEvent;
-import org.bukkit.event.block.BlockExplodeEvent;
-import org.bukkit.event.block.BlockPistonExtendEvent;
-import org.bukkit.event.block.BlockPistonRetractEvent;
-import org.bukkit.event.block.BlockPlaceEvent;
+import org.bukkit.event.block.*;
 import org.bukkit.event.entity.EntityExplodeEvent;
 import org.bukkit.event.world.ChunkLoadEvent;
 import org.bukkit.event.world.ChunkUnloadEvent;
@@ -48,9 +43,10 @@ public class PipeListener implements Listener {
      *
      * @param block The pipe block being removed
      * @param shouldDrop Whether to drop the pipe item
+     * @param naturalDrop Whether the drop has random velocity
      * @return true if this was a registered pipe (cleanup performed)
      */
-    private boolean handlePipeRemoval(Block block, boolean shouldDrop) {
+    private boolean handlePipeRemoval(Block block, boolean shouldDrop, boolean naturalDrop) {
         if (block.getType() != Material.PLAYER_HEAD && block.getType() != Material.PLAYER_WALL_HEAD) {
             return false;
         }
@@ -71,15 +67,26 @@ public class PipeListener implements Listener {
         if (shouldDrop) {
             ItemStack dropItem = plugin.getPipeItem(variant);
             if (dropItem != null) {
-                block.getWorld().dropItem(
-                    block.getLocation().add(0.5, 0.5, 0.5),
-                    dropItem,
-                    item -> item.setVelocity(new Vector(0, 0, 0))
-                );
+                if (naturalDrop) {
+                    block.getWorld().dropItemNaturally(
+                            block.getLocation().add(0.5, 0.5, 0.5),
+                            dropItem
+                    );
+                } else {
+                    block.getWorld().dropItem(
+                            block.getLocation().add(0.5, 0.5, 0.5),
+                            dropItem,
+                            item -> item.setVelocity(new Vector(0, 0, 0))
+                    );
+                }
             }
         }
 
         return true;
+    }
+
+    private boolean handlePipeRemoval(Block block, boolean shouldDrop) {
+        return handlePipeRemoval(block, shouldDrop, false);
     }
 
     /**
@@ -309,6 +316,17 @@ public class PipeListener implements Listener {
         // Fire destroys pipes without dropping items
         handlePipeRemoval(block, false);
         scheduleAdjacentUpdates(block.getLocation());
+    }
+
+    @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
+    public void onBlockFromTo(BlockFromToEvent event) {
+        Block block = event.getToBlock();
+
+        if (handlePipeRemoval(block, true, true)) {
+            event.setCancelled(true);
+            block.setType(Material.AIR);
+            scheduleAdjacentUpdates(block.getLocation());
+        }
     }
 
     // ========== Chunk Handlers ==========
