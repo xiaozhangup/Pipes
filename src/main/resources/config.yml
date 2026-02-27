@@ -28,9 +28,9 @@ variants:
   # Copper Pipe - standard pipe that pulls items from containers
   copper_pipe:
     behavior: REGULAR  # REGULAR or CORNER
-    display-name: "Copper Pipe"
+    display-name: "<white>铜质管"
     lore:
-      - "Pulls items out of the container or pipe it is placed on."
+      - "<gray>从其放置的容器或管道中提取物品"
     texture-set: copper  # References texture set in display.yml
 
     # Per-variant transfer settings
@@ -54,9 +54,9 @@ variants:
   # Corner Pipe - only relays items, doesn't pull from containers
   copper_corner_pipe:
     behavior: CORNER
-    display-name: "Copper Corner Pipe"
+    display-name: "<white>铜质转角管"
     lore:
-      - "Pushed items into the direction it was placed. Must have another pipe feeding into it."
+      - "<gray>将物品推向放置方向。必须有其他管道输入"
     texture-set: copper_corner  # References texture set in display.yml
 
     transfer:
@@ -84,9 +84,9 @@ variants:
   # Iron Pipe - standard pipe that pulls items from containers
   iron_pipe:
     behavior: REGULAR
-    display-name: "Iron Pipe"
+    display-name: "<white>铁质管"
     lore:
-      - "Pulls items out of the container or pipe it is placed on."
+      - "<gray>从其放置的容器或管道中提取物品"
     texture-set: iron
 
     transfer:
@@ -106,9 +106,9 @@ variants:
   # Iron Corner Pipe - only relays items, doesn't pull from containers
   iron_corner_pipe:
     behavior: CORNER
-    display-name: "Iron Corner Pipe"
+    display-name: "<white>铁质转角管"
     lore:
-      - "Pushed items into the direction it was placed. Must have another pipe feeding into it."
+      - "<gray>将物品推向放置方向。必须有其他管道输入"
     texture-set: iron_corner
 
     transfer:
@@ -136,9 +136,9 @@ variants:
   # Gold Pipe - standard pipe that pulls items from containers
   gold_pipe:
     behavior: REGULAR
-    display-name: "Gold Pipe"
+    display-name: "<white>金质管"
     lore:
-      - "Pulls items out of the container or pipe it is placed on."
+      - "<gray>从其放置的容器或管道中提取物品"
     texture-set: gold
 
     transfer:
@@ -158,9 +158,9 @@ variants:
   # Gold Corner Pipe - only relays items, doesn't pull from containers
   gold_corner_pipe:
     behavior: CORNER
-    display-name: "Gold Corner Pipe"
+    display-name: "<white>金质转角管"
     lore:
-      - "Pushed items into the direction it was placed. Must have another pipe feeding into it."
+      - "<gray>将物品推向放置方向。必须有其他管道输入"
     texture-set: gold_corner
 
     transfer:
@@ -188,9 +188,9 @@ variants:
   # Oxidized Copper Pipe - obtained by throwing copper pipe into water cauldron
   oxidized_copper_pipe:
     behavior: REGULAR
-    display-name: "Oxidized Copper Pipe"
+    display-name: "<white>氧化铜质管"
     lore:
-      - "Pulls items out of the container or pipe it is placed on."
+      - "<gray>从其放置的容器或管道中提取物品"
     texture-set: oxidized_copper
 
     transfer:
@@ -202,9 +202,9 @@ variants:
   # Oxidized Copper Corner Pipe - obtained by throwing corner pipe into water cauldron
   oxidized_copper_corner_pipe:
     behavior: CORNER
-    display-name: "Oxidized Copper Corner Pipe"
+    display-name: "<white>氧化铜质转角管"
     lore:
-      - "Pushed items into the direction it was placed. Must have another pipe feeding into it."
+      - "<gray>将物品推向放置方向。必须有其他管道输入"
     texture-set: oxidized_copper_corner
 
     transfer:
