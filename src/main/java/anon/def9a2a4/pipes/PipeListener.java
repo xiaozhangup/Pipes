@@ -217,8 +217,10 @@ public class PipeListener implements Listener {
             PipeData pipeData = manager.getPipeData(adjacentLoc);
             if (pipeData != null) {
                 BlockFace pipeFacing = pipeData.facing();
-                // Update if block is at pipe's source (opposite of facing) or destination (facing direction)
-                if (face == pipeFacing || face == pipeFacing.getOppositeFace()) {
+                // Regular pipes: update only when the changed block is at source or destination
+                // Corner pipes: update on any adjacent change (side faces are valid secondary outputs)
+                boolean isCorner = pipeData.variant().getBehaviorType() == BehaviorType.CORNER;
+                if (isCorner || face == pipeFacing || face == pipeFacing.getOppositeFace()) {
                     manager.updateDisplayEntity(adjacentLoc);
                 }
             }

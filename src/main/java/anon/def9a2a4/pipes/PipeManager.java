@@ -168,9 +168,9 @@ public class PipeManager {
         if (pipeLocation.getWorld() != world) throw new RuntimeException("Location world does not match PipeManager world");
         if (world == null) return;
 
-        // For corner pipes, we need to update both displays differently
+        // For corner pipes, we need to refresh all directional displays
         if (data.variant().getBehaviorType() == BehaviorType.CORNER) {
-            updateCornerDisplayEntities(normalized, data);
+            refreshCornerDisplayEntities(pipeLocation);
         } else {
             // Regular pipes have single display
             UUID uuid = data.displayEntityIds().getFirst();
@@ -182,29 +182,106 @@ public class PipeManager {
         }
     }
 
-    private void updateCornerDisplayEntities(Location normalized, PipeData data) {
-        // Find entities by tag to determine which is directional
-        Collection<Entity> nearby = world.getNearbyEntities(
-                normalized.clone().add(0.5, 0.5, 0.5),
-                1.0, 1.0, 1.0,
-                e -> e instanceof ItemDisplay
-        );
+    /**
+     * 完全重建转角管道的所有 display 实体：保留主体显示，删除所有旧的方向指示
+     * 实体，然后为每个活跃输出方向（主输出 + 副输出）分别生成一个新的方向指示实体。
+     * <p>
+     * 在转角放置、周围方块变化时调用，以保持视觉与传输逻辑一致。
+     */
+    public void refreshCornerDisplayEntities(Location location) {
+        Location normalized = normalizeLocation(location);
+        PipeData data = pipes.get(normalized);
+        if (data == null || data.variant().getBehaviorType() != BehaviorType.CORNER) return;
+        if (normalized.getWorld() != world) return;
 
-        for (Entity entity : nearby) {
-            String pipeTag = PipeTags.getPipeTag(entity.getScoreboardTags());
-            if (pipeTag != null && PipeTags.matchesLocation(pipeTag, normalized)) {
-                ItemDisplay display = (ItemDisplay) entity;
-                if (PipeTags.isDirectionalTag(pipeTag)) {
-                    // Update directional display
-                    Transformation transformation = calculateCornerDirectionalTransformation(normalized, data.facing());
-                    display.setTransformation(transformation);
+        // 计算当前应存在的活跃输出方向集合
+        Set<BlockFace> desiredFaces = new HashSet<>(getCornerActiveOutputFaces(normalized, data.facing()));
+
+        // 分类现有实体：主体实体保留 UUID，directional 实体按方向索引
+        List<UUID> finalIds = new ArrayList<>();
+        Map<BlockFace, UUID> existingDirEntities = new HashMap<>(); // face -> UUID
+
+        if (data.displayEntityIds() != null) {
+            for (UUID uuid : data.displayEntityIds()) {
+                Entity entity = world.getEntity(uuid);
+                if (entity == null) continue;
+
+                String tag = PipeTags.getPipeTag(entity.getScoreboardTags());
+                if (tag == null) continue;
+
+                if (PipeTags.isDirectionalTag(tag)) {
+                    BlockFace face = PipeTags.parseFacing(tag);
+                    if (face != null) {
+                        existingDirEntities.put(face, uuid);
+                    } else {
+                        entity.remove(); // 无法解析方向，清除
+                    }
                 } else {
-                    // Update main (non-directional) display
-                    Transformation transformation = calculateCornerTransformation();
-                    display.setTransformation(transformation);
+                    finalIds.add(uuid); // 主体实体，直接保留
                 }
             }
         }
+
+        // 移除不再需要的 directional 实体
+        for (Map.Entry<BlockFace, UUID> entry : existingDirEntities.entrySet()) {
+            if (desiredFaces.contains(entry.getKey())) {
+                finalIds.add(entry.getValue()); // 仍需要，保留
+            } else {
+                Entity entity = world.getEntity(entry.getValue());
+                if (entity != null) entity.remove(); // 不再需要，删除
+            }
+        }
+
+        // 新增尚不存在的方向指示实体
+        Location spawnLoc = normalized.clone().add(0.5, 0.5, 0.5);
+        for (BlockFace outputFace : desiredFaces) {
+            if (existingDirEntities.containsKey(outputFace)) continue; // 已存在，跳过
+
+            ItemStack dirItem = plugin.getDirectionalDisplayItem(data.variant(), outputFace);
+            Transformation dirTransform = calculateCornerDirectionalTransformation(normalized, outputFace);
+            PipeVariant variant = data.variant();
+            ItemDisplay dirDisplay = world.spawn(spawnLoc, ItemDisplay.class, entity -> {
+                entity.setItemStack(dirItem);
+                entity.setPersistent(true);
+                entity.addScoreboardTag(PipeTags.createDirectionalTag(normalized, outputFace, variant));
+                entity.setTransformation(dirTransform);
+            });
+            finalIds.add(dirDisplay.getUniqueId());
+        }
+
+        // 更新 PipeData 中的 display UUID 列表
+        pipes.put(normalized, new PipeData(data.facing(), finalIds, data.variant()));
+        pathCache.clear();
+    }
+
+    /**
+     * 计算转角管道所有活跃输出方向：主输出方向始终包含，
+     * 其余方向若有可接收的容器或非 head-to-head 的管道则也包含。
+     */
+    private List<BlockFace> getCornerActiveOutputFaces(Location cornerLoc, BlockFace primaryFacing) {
+        List<BlockFace> faces = new ArrayList<>();
+        faces.add(primaryFacing);
+
+        Block cornerBlock = cornerLoc.getBlock();
+        for (BlockFace face : new BlockFace[]{
+                BlockFace.NORTH, BlockFace.SOUTH, BlockFace.EAST,
+                BlockFace.WEST, BlockFace.UP, BlockFace.DOWN}) {
+            if (face == primaryFacing) continue;
+
+            Block adjacent = cornerBlock.getRelative(face);
+
+            ContainerAdapter adapter = ContainerAdapterRegistry.findAdapter(adjacent).orElse(null);
+            if (adapter != null && adapter.canReceive(adjacent)) {
+                faces.add(face);
+                continue;
+            }
+
+            PipeData adjPipe = getPipeData(adjacent.getLocation());
+            if (adjPipe != null && adjPipe.facing() != face.getOppositeFace()) {
+                faces.add(face);
+            }
+        }
+        return faces;
     }
 
     public List<ItemDisplay> spawnDisplayEntities(Location location, BlockFace facing, PipeVariant variant) {
@@ -226,19 +303,19 @@ public class PipeManager {
         });
         displays.add(mainDisplay);
 
-        // For corner pipes, spawn a second directional display entity
+        // For corner pipes, spawn directional displays for all active output faces
         if (variant.getBehaviorType() == BehaviorType.CORNER) {
-            // Use the corner variant's own directional display texture
-            ItemStack directionalItem = plugin.getDirectionalDisplayItem(variant, facing);
-            Transformation directionalTransformation = calculateCornerDirectionalTransformation(location, facing);
-
-            ItemDisplay directionalDisplay = world.spawn(spawnLoc, ItemDisplay.class, entity -> {
-                entity.setItemStack(directionalItem);
-                entity.setPersistent(true);
-                entity.addScoreboardTag(PipeTags.createDirectionalTag(location, facing, variant));
-                entity.setTransformation(directionalTransformation);
-            });
-            displays.add(directionalDisplay);
+            for (BlockFace outputFace : getCornerActiveOutputFaces(location, facing)) {
+                ItemStack directionalItem = plugin.getDirectionalDisplayItem(variant, outputFace);
+                Transformation directionalTransformation = calculateCornerDirectionalTransformation(location, outputFace);
+                ItemDisplay directionalDisplay = world.spawn(spawnLoc, ItemDisplay.class, entity -> {
+                    entity.setItemStack(directionalItem);
+                    entity.setPersistent(true);
+                    entity.addScoreboardTag(PipeTags.createDirectionalTag(location, outputFace, variant));
+                    entity.setTransformation(directionalTransformation);
+                });
+                displays.add(directionalDisplay);
+            }
         }
 
         return displays;
@@ -273,7 +350,12 @@ public class PipeManager {
                 if (pipeData.facing() == currentFacing.getOppositeFace()) {
                     return "corner-into";
                 }
-                return "block"; // Corner pipe not feeding into us, treat as solid
+                // Corner pipe on our source side but facing orthogonally:
+                // it may be feeding items sideways into us (secondary output), treat as connected
+                if (pipeData.facing() != currentFacing) {
+                    return "corner-into";
+                }
+                return "block"; // Corner pipe facing same direction as us, treat as solid
             }
             // Regular pipe
             if (pipeData.facing() == currentFacing) {
@@ -645,40 +727,45 @@ public class PipeManager {
 
         boolean transferred = false;
         if (path.destination() == null) {
-            // No container destination - drop at the last pipe in the chain
-            Location lastPipeLoc = path.lastPipeLocation();
-            PipeData lastPipeData = getPipeData(lastPipeLoc);
-            BlockFace finalFacing = lastPipeData != null ? lastPipeData.facing() : facing;
+            // 无容器目的地时，先尝试转角节点的备用输出
+            transferred = tryCornerJunctionAlternatives(path, toTransfer);
 
-            // Spawn at the pipe face (boundary between pipe and destination block)
-            // Use lower Y for horizontal pipes since item entity has height
-            double yOffset = finalFacing.getModY() == 0 ? 0.25 : 0.5;
-            Location dropLoc = lastPipeLoc.getBlock().getLocation().add(0.5, yOffset, 0.5);
-            // Offset to the pipe's output face
-            dropLoc.add(finalFacing.getModX() * 0.6, finalFacing.getModY() * 0.6, finalFacing.getModZ() * 0.6);
+            if (!transferred) {
+                // 仍无法传输，掉落在链条末端
+                Location lastPipeLoc = path.lastPipeLocation();
+                PipeData lastPipeData = getPipeData(lastPipeLoc);
+                BlockFace finalFacing = lastPipeData != null ? lastPipeData.facing() : facing;
 
-            // For DOWN-facing pipes, lower spawn position to avoid clipping into the head
-            if (finalFacing == BlockFace.DOWN) {
-                dropLoc.add(0, -0.05, 0);
+                // Spawn at the pipe face (boundary between pipe and destination block)
+                // Use lower Y for horizontal pipes since item entity has height
+                double yOffset = finalFacing.getModY() == 0 ? 0.25 : 0.5;
+                Location dropLoc = lastPipeLoc.getBlock().getLocation().add(0.5, yOffset, 0.5);
+                // Offset to the pipe's output face
+                dropLoc.add(finalFacing.getModX() * 0.6, finalFacing.getModY() * 0.6, finalFacing.getModZ() * 0.6);
+
+                // For DOWN-facing pipes, lower spawn position to avoid clipping into the head
+                if (finalFacing == BlockFace.DOWN) {
+                    dropLoc.add(0, -0.05, 0);
+                }
+
+                // Spawn item with velocity set during spawn to avoid dropItem's default velocity
+                double baseSpeed = (finalFacing == BlockFace.DOWN) ? 0 : 0.25;
+                double randomSpread = 0.05;
+                final ItemStack finalTransfer = toTransfer;
+
+                Item item = lastPipeLoc.getWorld().spawn(dropLoc, Item.class, spawnedItem -> {
+                    spawnedItem.setItemStack(finalTransfer);
+
+                    Vector velocity = new Vector(
+                        finalFacing.getModX() * baseSpeed + (random.nextDouble() - 0.5) * randomSpread,
+                        finalFacing.getModY() * baseSpeed + (random.nextDouble() - 0.5) * randomSpread,
+                        finalFacing.getModZ() * baseSpeed + (random.nextDouble() - 0.5) * randomSpread
+                    );
+                    spawnedItem.setVelocity(velocity);
+                });
+
+                transferred = true;
             }
-
-            // Spawn item with velocity set during spawn to avoid dropItem's default velocity
-            double baseSpeed = (finalFacing == BlockFace.DOWN) ? 0 : 0.25;
-            double randomSpread = 0.05;
-            final ItemStack finalTransfer = toTransfer;
-
-            Item item = lastPipeLoc.getWorld().spawn(dropLoc, Item.class, spawnedItem -> {
-                spawnedItem.setItemStack(finalTransfer);
-
-                Vector velocity = new Vector(
-                    finalFacing.getModX() * baseSpeed + (random.nextDouble() - 0.5) * randomSpread,
-                    finalFacing.getModY() * baseSpeed + (random.nextDouble() - 0.5) * randomSpread,
-                    finalFacing.getModZ() * baseSpeed + (random.nextDouble() - 0.5) * randomSpread
-                );
-                spawnedItem.setVelocity(velocity);
-            });
-
-            transferred = true;
         } else {
             Block destBlock = path.destination().getBlock();
             ContainerAdapter destAdapter = ContainerAdapterRegistry.findAdapter(destBlock).orElse(null);
@@ -686,12 +773,124 @@ public class PipeManager {
                 ItemStack leftover = destAdapter.insert(destBlock, toTransfer);
                 if (leftover == null || leftover.getAmount() <= 0) {
                     transferred = true;
+                } else {
+                    // 主目标已满，先尝试转角节点备用输出，再尝试末端管道周围其他容器
+                    transferred = tryCornerJunctionAlternatives(path, toTransfer)
+                               || tryAlternativeDestination(path.lastPipeLocation(), path.destination(), toTransfer);
                 }
             }
         }
 
         if (transferred) {
             sourceAdapter.commitExtract(sourceBlock, toTransfer);
+        }
+        return false;
+    }
+
+    /**
+     * 转角管道多路输出：扫描路径链中所有转角节点，对每个节点尝试除入流方向和主输出方向之外
+     * 的相邻管道/容器（按 NORTH→SOUTH→EAST→WEST→UP→DOWN 优先级顺序）。
+     *
+     * @param path 当前路径（含完整管道链）
+     * @param item 待传输物品
+     * @return 是否成功插入某个备用目的地
+     */
+    private boolean tryCornerJunctionAlternatives(CachedPath path, ItemStack item) {
+        List<Location> chain = path.pipeChain();
+        for (int i = 1; i < chain.size(); i++) {
+            Location loc = chain.get(i);
+            PipeData pipeData = getPipeData(loc);
+            if (pipeData == null || pipeData.variant().getBehaviorType() != BehaviorType.CORNER) continue;
+
+            // 推断物品入流方向：上一节点的朝向即为物品的行进方向，
+            // 从转角管道视角看，入流面 = 行进方向的反方向
+            PipeData prevPipeData = getPipeData(chain.get(i - 1));
+            if (prevPipeData == null) continue;
+            // 物品行进方向 = prevPipeData.facing()；入流面（要跳过）= 行进方向的反面
+            BlockFace skipIncoming = prevPipeData.facing().getOppositeFace();
+            BlockFace primaryOut = pipeData.facing(); // 主输出已尝试过，跳过
+
+            Block cornerBlock = loc.getBlock();
+            // 以链条内所有位置作为初始 visited，避免循环
+            Set<Location> baseVisited = new HashSet<>(chain);
+
+            for (BlockFace face : new BlockFace[]{
+                    BlockFace.NORTH, BlockFace.SOUTH, BlockFace.EAST,
+                    BlockFace.WEST, BlockFace.UP, BlockFace.DOWN}) {
+                if (face == skipIncoming) continue;
+                if (face == primaryOut) continue;
+
+                Block adjacent = cornerBlock.getRelative(face);
+                Location adjLoc = normalizeLocation(adjacent.getLocation());
+
+                // 先尝试直接相邻容器
+                ContainerAdapter adjAdapter = ContainerAdapterRegistry.findAdapter(adjacent).orElse(null);
+                if (adjAdapter != null && adjAdapter.canReceive(adjacent)) {
+                    ItemStack leftover = adjAdapter.insert(adjacent, item);
+                    if (leftover == null || leftover.getAmount() <= 0) return true;
+                    continue;
+                }
+
+                // 再尝试相邻管道（沿该管道继续寻路）
+                PipeData adjPipeData = getPipeData(adjLoc);
+                if (adjPipeData == null) continue;
+                // 如果相邻管道朝向指回转角（head-to-head），跳过
+                if (adjPipeData.facing() == face.getOppositeFace()) continue;
+
+                Set<Location> visited = new HashSet<>(baseVisited);
+                visited.add(loc); // 标记转角自身，防止重入
+                CachedPath altPath = findDestination(adjLoc, adjPipeData.facing(), visited, new ArrayList<>());
+                if (altPath.destination() == null) continue;
+
+                Block destBlock = altPath.destination().getBlock();
+                ContainerAdapter destAdapter = ContainerAdapterRegistry.findAdapter(destBlock).orElse(null);
+                if (destAdapter == null) continue;
+                ItemStack leftover = destAdapter.insert(destBlock, item);
+                if (leftover == null || leftover.getAmount() <= 0) return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * 优先级分流：主目标满时，尝试链条末端管道周围其他相邻容器。
+     * <p>
+     * 按 NORTH → SOUTH → EAST → WEST → UP → DOWN 固定顺序依次尝试，
+     * 找到第一个能接收的容器即插入（优先级由方向顺序决定）。
+     *
+     * @param lastPipeLoc 链条末端管道的位置
+     * @param primaryDest 主目标位置（已满，跳过）
+     * @param item        待传输的物品
+     * @return 是否成功插入到某个备用容器
+     */
+    private boolean tryAlternativeDestination(Location lastPipeLoc, Location primaryDest, ItemStack item) {
+        Block lastPipeBlock = lastPipeLoc.getBlock();
+        PipeData lastPipeData = getPipeData(lastPipeLoc);
+        // 链条来向（反方向），不向源头插入
+        BlockFace backFace = lastPipeData != null ? lastPipeData.facing().getOppositeFace() : null;
+
+        Location normalizedPrimary = normalizeLocation(primaryDest);
+        for (BlockFace face : new BlockFace[]{
+                BlockFace.NORTH, BlockFace.SOUTH, BlockFace.EAST,
+                BlockFace.WEST, BlockFace.UP, BlockFace.DOWN}) {
+            // 跳过已尝试的主目标方向
+            if (face == backFace) continue;
+
+            Block adjacent = lastPipeBlock.getRelative(face);
+            Location adjLoc = normalizeLocation(adjacent.getLocation());
+
+            // 跳过主目标（已满）
+            if (adjLoc.equals(normalizedPrimary)) continue;
+            // 跳过管道方块（不递归进入链条）
+            if (getPipeData(adjLoc) != null) continue;
+
+            ContainerAdapter adapter = ContainerAdapterRegistry.findAdapter(adjacent).orElse(null);
+            if (adapter == null || !adapter.canReceive(adjacent)) continue;
+
+            ItemStack leftover = adapter.insert(adjacent, item);
+            if (leftover == null || leftover.getAmount() <= 0) {
+                return true;
+            }
         }
         return false;
     }
@@ -960,8 +1159,15 @@ public class PipeManager {
             if (block.getType() == Material.PLAYER_HEAD || block.getType() == Material.PLAYER_WALL_HEAD) {
                 // Group entities by location
                 entityGroups.computeIfAbsent(normalized, k -> new ArrayList<>()).add(entity.getUniqueId());
-                facingByLocation.put(normalized, facing);
-                variantByLocation.put(normalized, variant);
+                // Only read pipe facing from the main (non-directional) entity to avoid
+                // secondary directional entities overwriting the correct pipe facing.
+                if (!PipeTags.isDirectionalTag(pipeTag)) {
+                    facingByLocation.put(normalized, facing);
+                    variantByLocation.put(normalized, variant);
+                } else {
+                    // Still record variant in case main entity hasn't been seen yet
+                    variantByLocation.putIfAbsent(normalized, variant);
+                }
             } else {
                 // Orphaned display entity - pipe block was removed while chunk was unloaded
                 entity.remove();
