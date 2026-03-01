@@ -39,6 +39,7 @@ public class PipeManager {
 
     private final Map<Location, CachedPath> pathCache = new HashMap<>();
     private final Set<Location> dirtyPaths = new HashSet<>();
+    private final Map<Location, Long> sleepUntil = new HashMap<>();
 
     public PipeManager(PipesPlugin plugin, World world) {
         this.plugin = plugin;
@@ -106,6 +107,7 @@ public class PipeManager {
         Location normalized = normalizeLocation(location);
         PipeData data = pipes.remove(normalized);
         lastTransferTime.remove(normalized);
+        sleepUntil.remove(normalized);
         dirtyPaths.remove(normalized);
         pathCache.clear();
 
@@ -674,6 +676,13 @@ public class PipeManager {
             Location loc = entry.getKey();
             PipeData data = entry.getValue();
 
+            // 休眠检测：若管道正在休眠则直接跳过，不做任何计算
+            Long wakeTime = sleepUntil.get(loc);
+            if (wakeTime != null) {
+                if (now < wakeTime) continue;
+                sleepUntil.remove(loc); // 已醒，清除记录
+            }
+
             // Check if enough time has passed for this pipe's variant
             long intervalMs = data.variant().getTransferIntervalTicks() * 50L;
             Long lastTime = lastTransferTime.get(loc);
@@ -687,6 +696,22 @@ public class PipeManager {
         }
 
         toRemove.forEach(pipes::remove);
+    }
+
+    /**
+     * 让指定位置的管道进入休眠，直到 {@code durationMs} 毫秒后再恢复检测。
+     * durationMs <= 0 时不操作（即配置禁用该优化）。
+     */
+    private void sleepPipe(Location normalized, long durationMs) {
+        if (durationMs <= 0) return;
+        sleepUntil.put(normalized, System.currentTimeMillis() + durationMs);
+    }
+
+    /**
+     * 唤醒某位置的管道（如附近的容器发生变化时可主动调用）。
+     */
+    public void wakeUpPipe(Location location) {
+        sleepUntil.remove(normalizeLocation(location));
     }
 
     /**
@@ -718,7 +743,11 @@ public class PipeManager {
         // Start with this pipe's items per transfer and find minimum along path
         int startingMax = data.variant().getItemsPerTransfer();
         ItemStack toTransfer = sourceAdapter.peekExtract(sourceBlock, startingMax);
-        if (toTransfer == null) return false;
+        if (toTransfer == null) {
+            // 源容器为空，进入休眠：接下来若干毫秒内不再检测此管道
+            sleepPipe(pipeLocation, plugin.getPipeConfig().getSourceEmptySleepMs());
+            return false;
+        }
 
         // 从缓存获取路径，minItems 从 pipeChain 动态计算
         CachedPath path = getOrBuildPath(pipeLocation, facing);
@@ -777,6 +806,10 @@ public class PipeManager {
                     // 主目标已满，先尝试转角节点备用输出，再尝试末端管道周围其他容器
                     transferred = tryCornerJunctionAlternatives(path, toTransfer)
                                || tryAlternativeDestination(path.lastPipeLocation(), path.destination(), toTransfer);
+                    if (!transferred) {
+                        // 所有出口均已满，进入休眠：接下来若干毫秒内不再检测此管道
+                        sleepPipe(pipeLocation, plugin.getPipeConfig().getDestFullSleepMs());
+                    }
                 }
             }
         }
