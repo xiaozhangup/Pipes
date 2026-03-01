@@ -7,11 +7,9 @@ import org.bukkit.Particle;
 import org.bukkit.World;
 import org.bukkit.block.Block;
 import org.bukkit.block.BlockFace;
-import org.bukkit.block.Container;
 import org.bukkit.entity.Entity;
 import org.bukkit.entity.Item;
 import org.bukkit.entity.ItemDisplay;
-import org.bukkit.inventory.Inventory;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.util.Transformation;
 import org.bukkit.util.Vector;
@@ -55,7 +53,7 @@ public class PipeManager {
         world.submitCyclicalTask(
                 "pipes_transfer",
                 () -> {
-                    if (offset + Bukkit.getServer().getCurrentTick() % fastestInterval == 0) {
+                    if ((offset + Bukkit.getServer().getCurrentTick()) % fastestInterval == 0) {
                         this.transferAllPipes();
                     }
                 }
@@ -66,7 +64,7 @@ public class PipeManager {
             world.submitCyclicalTask(
                     "pipes_particles",
                     () -> {
-                        if (offset + Bukkit.getServer().getCurrentTick() % particleInterval == 0) {
+                        if ((offset + Bukkit.getServer().getCurrentTick()) % particleInterval == 0) {
                             this.spawnDebugParticles();
                         }
                     }
@@ -272,7 +270,7 @@ public class PipeManager {
         // Check container types
         if (isChest(sourceBlock)) return "chest";
         if (isHopper(sourceBlock)) return "hopper";
-        if (sourceBlock.getState() instanceof Container) return "container";
+        if (ContainerAdapterRegistry.findAdapter(sourceBlock).isPresent()) return "container";
         if (sourceBlock.getType().isAir() || !sourceBlock.getType().isSolid()) return "air";
         return "block";
     }
@@ -302,7 +300,7 @@ public class PipeManager {
 
         if (isChest(destBlock)) return "chest";
         if (isHopper(destBlock)) return "hopper";
-        if (destBlock.getState() instanceof Container) return "container";
+        if (ContainerAdapterRegistry.findAdapter(destBlock).isPresent()) return "container";
         if (destBlock.getType().isAir() || !destBlock.getType().isSolid()) return "air";
         return "block";
     }
@@ -612,27 +610,16 @@ public class PipeManager {
         BlockFace sourceDirection = facing.getOppositeFace();
 
         Block sourceBlock = pipeBlock.getRelative(sourceDirection);
-        if (!(sourceBlock.getState() instanceof Container sourceContainer)) {
+        ContainerAdapter sourceAdapter = ContainerAdapterRegistry.findAdapter(sourceBlock).orElse(null);
+        if (sourceAdapter == null) {
             return false;
         }
 
-        Inventory sourceInv = sourceContainer.getInventory();
-        ItemStack toTransfer = null;
-        int sourceSlot = -1;
-
-        for (int i = 0; i < sourceInv.getSize(); i++) {
-            ItemStack item = sourceInv.getItem(i);
-            if (item != null && !item.getType().isAir()) {
-                toTransfer = item.clone();
-                sourceSlot = i;
-                break;
-            }
-        }
-
-        if (toTransfer == null) return false;
-
         // Start with this pipe's items per transfer and find minimum along path
         int startingMax = data.variant().getItemsPerTransfer();
+        ItemStack toTransfer = sourceAdapter.peekExtract(sourceBlock, startingMax);
+        if (toTransfer == null) return false;
+
         DestinationResult result = findDestination(pipeLocation, facing, new HashSet<>(), startingMax);
 
         // Use the minimum from the path
@@ -677,22 +664,17 @@ public class PipeManager {
             transferred = true;
         } else {
             Block destBlock = result.destination().getBlock();
-            if (destBlock.getState() instanceof Container destContainer) {
-                HashMap<Integer, ItemStack> leftover = destContainer.getInventory().addItem(toTransfer);
-                if (leftover.isEmpty()) {
+            ContainerAdapter destAdapter = ContainerAdapterRegistry.findAdapter(destBlock).orElse(null);
+            if (destAdapter != null) {
+                ItemStack leftover = destAdapter.insert(destBlock, toTransfer);
+                if (leftover == null || leftover.getAmount() <= 0) {
                     transferred = true;
                 }
             }
         }
 
         if (transferred) {
-            ItemStack sourceItem = sourceInv.getItem(sourceSlot);
-            if (sourceItem != null) {
-                sourceItem.setAmount(sourceItem.getAmount() - toTransfer.getAmount());
-                if (sourceItem.getAmount() <= 0) {
-                    sourceInv.setItem(sourceSlot, null);
-                }
-            }
+            sourceAdapter.commitExtract(sourceBlock, toTransfer);
         }
         return false;
     }
@@ -707,7 +689,8 @@ public class PipeManager {
         }
         visited.add(nextLoc);
 
-        if (nextBlock.getState() instanceof Container) {
+        ContainerAdapter destAdapter = ContainerAdapterRegistry.findAdapter(nextBlock).orElse(null);
+        if (destAdapter != null && destAdapter.canReceive(nextBlock)) {
             return new DestinationResult(nextLoc, pipeLocation, currentMinItems);
         }
 

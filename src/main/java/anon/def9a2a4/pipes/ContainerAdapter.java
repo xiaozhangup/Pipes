@@ -1,0 +1,83 @@
+package anon.def9a2a4.pipes;
+
+import org.bukkit.block.Block;
+import org.bukkit.inventory.ItemStack;
+import org.jetbrains.annotations.Nullable;
+
+/**
+ * 自定义容器适配器接口。
+ * <p>
+ * 实现此接口并通过 {@link ContainerAdapterRegistry#register(ContainerAdapter)} 注册，
+ * 即可让管道系统识别和操作任意自定义容器方块，而无需实现原版 {@code org.bukkit.block.Container}。
+ * <p>
+ * 调用顺序（每次传输）：
+ * <ol>
+ *   <li>source 侧：{@link #hasItems(Block)} → {@link #peekExtract(Block, int)}</li>
+ *   <li>dest 侧：{@link #canReceive(Block)} → {@link #insert(Block, ItemStack)}</li>
+ *   <li>存入成功后：{@link #commitExtract(Block, ItemStack)}</li>
+ * </ol>
+ */
+public interface ContainerAdapter {
+
+    /**
+     * 判断此适配器是否能处理该方块。
+     * <p>
+     * 每次传输前调用一次，若返回 {@code true} 则使用此适配器，不再 fallback 到内置逻辑。
+     *
+     * @param block 被检测的方块
+     * @return 是否由此适配器负责处理
+     */
+    boolean canHandle(Block block);
+
+    /**
+     * 快速判断该方块当前是否有可提取的物品。
+     * <p>
+     * 用于在 source 侧跳过明显为空的容器，避免不必要的开销。
+     *
+     * @param block 源方块
+     * @return 是否存在可提取物品
+     */
+    boolean hasItems(Block block);
+
+    /**
+     * 预览可提取的物品，但不实际移除。
+     * <p>
+     * 仅在传输开始、确定源容器后调用。实际移除请等待 {@link #commitExtract} 被调用。
+     *
+     * @param block     源方块
+     * @param maxAmount 本次允许提取的最大数量（由管道传输量限制决定）
+     * @return 将被提取的物品副本；若无可提取物品则返回 {@code null}
+     */
+    @Nullable ItemStack peekExtract(Block block, int maxAmount);
+
+    /**
+     * 提交提取操作，从容器中实际移除物品。
+     * <p>
+     * 仅在 {@link #insert} 成功后调用，保证物品不会凭空消失。
+     *
+     * @param block     源方块
+     * @param extracted 与 {@link #peekExtract} 返回值数量一致的物品
+     */
+    void commitExtract(Block block, ItemStack extracted);
+
+    /**
+     * 快速判断该方块当前是否能接受物品。
+     * <p>
+     * 用于 {@code findDestination} 路径寻找时判断终点是否有效。
+     *
+     * @param block 目标方块
+     * @return 是否接受物品
+     */
+    boolean canReceive(Block block);
+
+    /**
+     * 尝试将物品存入容器。
+     * <p>
+     * 应尽量存入所有物品；若空间不足，返回未能存入的剩余部分。
+     *
+     * @param block 目标方块
+     * @param item  要存入的物品（不要修改原始引用，应操作副本）
+     * @return 未能存入的剩余物品；完全存入时返回 {@code null} 或 amount &le; 0 的物品
+     */
+    @Nullable ItemStack insert(Block block, ItemStack item);
+}
