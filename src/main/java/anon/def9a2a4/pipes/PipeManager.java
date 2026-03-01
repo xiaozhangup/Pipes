@@ -1,12 +1,10 @@
 package anon.def9a2a4.pipes;
 
-import org.bukkit.Bukkit;
-import org.bukkit.Location;
-import org.bukkit.Material;
-import org.bukkit.Particle;
-import org.bukkit.World;
+import org.bukkit.*;
 import org.bukkit.block.Block;
 import org.bukkit.block.BlockFace;
+import org.bukkit.block.data.Directional;
+import org.bukkit.block.data.Rotatable;
 import org.bukkit.entity.Entity;
 import org.bukkit.entity.Item;
 import org.bukkit.entity.ItemDisplay;
@@ -15,8 +13,6 @@ import org.bukkit.util.Transformation;
 import org.bukkit.util.Vector;
 import org.joml.AxisAngle4f;
 import org.joml.Vector3f;
-
-import org.bukkit.Chunk;
 
 import anon.def9a2a4.pipes.config.DisplayConfig;
 
@@ -32,7 +28,7 @@ import java.util.UUID;
 
 public class PipeManager {
 
-    private record DestinationResult(Location destination, Location lastPipeLocation, int minItemsPerTransfer) {}
+    private record CachedPath(Location destination, Location lastPipeLocation, List<Location> pipeChain) {}
 
     private final PipesPlugin plugin;
     private final int offset;
@@ -40,6 +36,9 @@ public class PipeManager {
     private final Random random = new Random();
     private final Map<Location, PipeData> pipes = new HashMap<>();
     private final Map<Location, Long> lastTransferTime = new HashMap<>();
+
+    private final Map<Location, CachedPath> pathCache = new HashMap<>();
+    private final Set<Location> dirtyPaths = new HashSet<>();
 
     public PipeManager(PipesPlugin plugin, World world) {
         this.plugin = plugin;
@@ -83,13 +82,32 @@ public class PipeManager {
     }
 
     public void registerPipe(Location location, BlockFace facing, List<UUID> displayEntityIds, PipeVariant variant) {
-        pipes.put(normalizeLocation(location), new PipeData(facing, displayEntityIds, variant));
+        Location normalized = normalizeLocation(location);
+        pipes.put(normalized, new PipeData(facing, displayEntityIds, variant));
+        // 新管道可能让已有管道的路径在此「拐弯」，全量清缓存保证正确性。
+        // 批量 scanChunk 时每次 registerPipe 都会清，但缓存在首次传输前会被按需重建，
+        // 开销均摊到各自第一次 transferItems，而非全压在同一 tick。
+        pathCache.clear();
+        dirtyPaths.add(normalized);
+    }
+
+    /**
+     * 标记单根管道路径失效，用于传输量参数等局部变化，不影响网络拓扑时使用。
+     * 拓扑变化（管道增删、区块事件）应调用 pathCache.clear()。
+     *
+     * @param location 路径需要重算的管道位置
+     */
+    public void invalidatePath(Location location) {
+        Location normalized = normalizeLocation(location);
+        dirtyPaths.add(normalized);
     }
 
     public void unregisterPipe(Location location) {
         Location normalized = normalizeLocation(location);
         PipeData data = pipes.remove(normalized);
         lastTransferTime.remove(normalized);
+        dirtyPaths.remove(normalized);
+        pathCache.clear();
 
         if (location.getWorld() != world) throw new RuntimeException("Location world does not match PipeManager world");
         if (world == null) return;
@@ -560,7 +578,7 @@ public class PipeManager {
                         3,
                         0.2, 0.2, 0.2,
                         0,
-                        new Particle.DustOptions(org.bukkit.Color.fromRGB(255, 100, 50), 1.0f)
+                        new Particle.DustOptions(Color.fromRGB(255, 100, 50), 1.0f)
                 );
             }
         }
@@ -620,16 +638,15 @@ public class PipeManager {
         ItemStack toTransfer = sourceAdapter.peekExtract(sourceBlock, startingMax);
         if (toTransfer == null) return false;
 
-        DestinationResult result = findDestination(pipeLocation, facing, new HashSet<>(), startingMax);
-
-        // Use the minimum from the path
-        int transferAmount = result.minItemsPerTransfer();
+        // 从缓存获取路径，minItems 从 pipeChain 动态计算
+        CachedPath path = getOrBuildPath(pipeLocation, facing);
+        int transferAmount = calcMinItems(path.pipeChain(), startingMax);
         toTransfer.setAmount(Math.min(transferAmount, toTransfer.getAmount()));
 
         boolean transferred = false;
-        if (result.destination() == null) {
+        if (path.destination() == null) {
             // No container destination - drop at the last pipe in the chain
-            Location lastPipeLoc = result.lastPipeLocation();
+            Location lastPipeLoc = path.lastPipeLocation();
             PipeData lastPipeData = getPipeData(lastPipeLoc);
             BlockFace finalFacing = lastPipeData != null ? lastPipeData.facing() : facing;
 
@@ -663,7 +680,7 @@ public class PipeManager {
 
             transferred = true;
         } else {
-            Block destBlock = result.destination().getBlock();
+            Block destBlock = path.destination().getBlock();
             ContainerAdapter destAdapter = ContainerAdapterRegistry.findAdapter(destBlock).orElse(null);
             if (destAdapter != null) {
                 ItemStack leftover = destAdapter.insert(destBlock, toTransfer);
@@ -679,41 +696,95 @@ public class PipeManager {
         return false;
     }
 
-    private DestinationResult findDestination(Location pipeLocation, BlockFace facing,
-                                               Set<Location> visited, int currentMinItems) {
+    private CachedPath getOrBuildPath(Location pipeLocation, BlockFace facing) {
+        Location key = normalizeLocation(pipeLocation);
+
+        if (dirtyPaths.remove(key)) {
+            pathCache.remove(key);
+        }
+
+        CachedPath cached = pathCache.get(key);
+        if (cached != null) {
+            if (isPathStillValid(cached)) {
+                return cached; // 缓存命中
+            }
+        }
+
+        CachedPath fresh = findDestination(pipeLocation, facing, new HashSet<>(), new ArrayList<>());
+        pathCache.put(key, fresh);
+        return fresh;
+    }
+
+    private boolean isPathStillValid(CachedPath path) {
+        if (path.destination() == null) {
+            return true;
+        }
+
+        Block destBlock = path.destination().getBlock();
+        ContainerAdapter destAdapter = ContainerAdapterRegistry.findAdapter(destBlock).orElse(null);
+        if (destAdapter == null || !destAdapter.canReceive(destBlock)) {
+            return false;
+        }
+
+        List<Location> chain = path.pipeChain();
+        for (int i = 0; i < chain.size() - 1; i++) {
+            PipeData pipeData = getPipeData(chain.get(i));
+            if (pipeData == null) continue; // 管道已被移除，pathCache.clear() 会处理
+            Block nextBlock = chain.get(i).getBlock().getRelative(pipeData.facing());
+            ContainerAdapter midAdapter = ContainerAdapterRegistry.findAdapter(nextBlock).orElse(null);
+            if (midAdapter != null && midAdapter.canReceive(nextBlock)) {
+                return false; // 链条中途出现了新容器，路径需要重建
+            }
+        }
+
+        return true;
+    }
+
+    private int calcMinItems(List<Location> pipeChain, int startingMax) {
+        int min = startingMax;
+        for (Location loc : pipeChain) {
+            PipeData d = getPipeData(loc);
+            if (d != null) min = Math.min(min, d.variant().getItemsPerTransfer());
+        }
+        return min;
+    }
+
+    private CachedPath findDestination(Location pipeLocation, BlockFace facing,
+                                       Set<Location> visited, List<Location> chain) {
+        chain.add(normalizeLocation(pipeLocation));
+
         Block nextBlock = pipeLocation.getBlock().getRelative(facing);
         Location nextLoc = normalizeLocation(nextBlock.getLocation());
 
         if (visited.contains(nextLoc)) {
-            return new DestinationResult(null, pipeLocation, currentMinItems);
+            return new CachedPath(null, pipeLocation, chain);
         }
         visited.add(nextLoc);
 
         ContainerAdapter destAdapter = ContainerAdapterRegistry.findAdapter(nextBlock).orElse(null);
         if (destAdapter != null && destAdapter.canReceive(nextBlock)) {
-            return new DestinationResult(nextLoc, pipeLocation, currentMinItems);
+            return new CachedPath(nextLoc, pipeLocation, chain);
         }
 
         PipeData nextPipeData = getPipeData(nextLoc);
         if (nextPipeData != null) {
-            // Calculate new minimum based on next pipe's settings
-            int nextMin = Math.min(currentMinItems, nextPipeData.variant().getItemsPerTransfer());
-
             // If the next pipe is facing INTO this pipe (head-to-head), drop the item
             if (nextPipeData.facing() == facing.getOppositeFace()) {
-                return new DestinationResult(null, pipeLocation, currentMinItems);
+                return new CachedPath(null, pipeLocation, chain);
             }
             // Otherwise, follow the next pipe's direction (same direction, perpendicular, etc.)
-            return findDestination(nextLoc, nextPipeData.facing(), visited, nextMin);
+            return findDestination(nextLoc, nextPipeData.facing(), visited, chain);
         }
 
-        return new DestinationResult(null, pipeLocation, currentMinItems);
+        return new CachedPath(null, pipeLocation, chain);
     }
 
     public void shutdown() {
         stopTasks();
         pipes.clear();
         lastTransferTime.clear();
+        pathCache.clear();
+        dirtyPaths.clear();
     }
 
     /**
@@ -847,10 +918,6 @@ public class PipeManager {
         for (Chunk chunk : world.getLoadedChunks()) {
             count += scanChunk(chunk);
         }
-
-        if (count > 0) {
-            plugin.getLogger().info("Restored " + count + " pipes in world " + world.getName());
-        }
     }
 
     public int scanChunk(Chunk chunk) {
@@ -883,7 +950,6 @@ public class PipeManager {
 
             PipeVariant variant = registry.getVariant(variantId);
             if (variant == null) {
-                plugin.getLogger().warning("Unknown variant '" + variantId + "' for pipe at " + location);
                 continue;
             }
 
@@ -933,6 +999,8 @@ public class PipeManager {
 
             if (locChunkX == chunkX && locChunkZ == chunkZ) {
                 lastTransferTime.remove(loc);
+                dirtyPaths.remove(loc);
+                pathCache.clear();
                 return true;
             }
             return false;
@@ -941,10 +1009,10 @@ public class PipeManager {
 
     public BlockFace getFacingFromSkull(Block block) {
         if (block.getType() == Material.PLAYER_WALL_HEAD) {
-            org.bukkit.block.data.Directional directional = (org.bukkit.block.data.Directional) block.getBlockData();
+            Directional directional = (Directional) block.getBlockData();
             return directional.getFacing();
         } else if (block.getType() == Material.PLAYER_HEAD) {
-            org.bukkit.block.data.Rotatable rotatable = (org.bukkit.block.data.Rotatable) block.getBlockData();
+            Rotatable rotatable = (Rotatable) block.getBlockData();
             return rotatable.getRotation();
         }
         return BlockFace.NORTH;
