@@ -43,6 +43,9 @@ variants:
     display-name: "<white>铜质管"
     lore:
       - "<gray>从其放置的容器或管道中提取物品"
+      - ""
+      - "<white>传输速度: <gray>16 / 次"
+      - "<white>传输间隔: <gray>0.5 秒"
     texture-set: copper  # References texture set in display.yml
 
     # Per-variant transfer settings
@@ -50,7 +53,7 @@ variants:
       # Ticks between item transfers (20 ticks = 1 second)
       interval-ticks: 10
       # Number of items to transfer per operation
-      items-per-transfer: 4
+      items-per-transfer: 16
 
     # Crafting recipes (supports multiple recipes per variant)
     recipes:
@@ -69,11 +72,14 @@ variants:
     display-name: "<white>铜质转角管"
     lore:
       - "<gray>将物品推向放置方向。必须有其他管道输入"
+      - ""
+      - "<white>传输速度: <gray>16 / 次"
+      - "<white>传输间隔: <gray>0.5 秒"
     texture-set: copper_corner  # References texture set in display.yml
 
     transfer:
       interval-ticks: 10
-      items-per-transfer: 4
+      items-per-transfer: 16
 
     recipes:
       - shape:
@@ -99,11 +105,14 @@ variants:
     display-name: "<white>铁质管"
     lore:
       - "<gray>从其放置的容器或管道中提取物品"
+      - ""
+      - "<white>传输速度: <gray>24 / 次"
+      - "<white>传输间隔: <gray>0.5 秒"
     texture-set: iron
 
     transfer:
       interval-ticks: 10
-      items-per-transfer: 8
+      items-per-transfer: 24
 
     recipes:
       - shape:
@@ -121,11 +130,14 @@ variants:
     display-name: "<white>铁质转角管"
     lore:
       - "<gray>将物品推向放置方向。必须有其他管道输入"
+      - ""
+      - "<white>传输速度: <gray>24 / 次"
+      - "<white>传输间隔: <gray>0.5 秒"
     texture-set: iron_corner
 
     transfer:
       interval-ticks: 10
-      items-per-transfer: 8
+      items-per-transfer: 24
 
     recipes:
       - shape:
@@ -151,11 +163,14 @@ variants:
     display-name: "<white>金质管"
     lore:
       - "<gray>从其放置的容器或管道中提取物品"
+      - ""
+      - "<white>传输速度: <gray>48 / 次"
+      - "<white>传输间隔: <gray>0.5 秒"
     texture-set: gold
 
     transfer:
       interval-ticks: 10
-      items-per-transfer: 16
+      items-per-transfer: 48
 
     recipes:
       - shape:
@@ -173,11 +188,14 @@ variants:
     display-name: "<white>金质转角管"
     lore:
       - "<gray>将物品推向放置方向。必须有其他管道输入"
+      - ""
+      - "<white>传输速度: <gray>48 / 次"
+      - "<white>传输间隔: <gray>0.5 秒"
     texture-set: gold_corner
 
     transfer:
       interval-ticks: 10
-      items-per-transfer: 16
+      items-per-transfer: 48
 
     recipes:
       - shape:
@@ -203,11 +221,14 @@ variants:
     display-name: "<white>氧化铜质管"
     lore:
       - "<gray>从其放置的容器或管道中提取物品"
+      - ""
+      - "<white>传输速度: <gray>4 / 次"
+      - "<white>传输间隔: <gray>0.5 秒"
     texture-set: oxidized_copper
 
     transfer:
       interval-ticks: 10
-      items-per-transfer: 1
+      items-per-transfer: 4
 
     # No recipes - obtained via cauldron conversion
 
@@ -217,11 +238,14 @@ variants:
     display-name: "<white>氧化铜质转角管"
     lore:
       - "<gray>将物品推向放置方向。必须有其他管道输入"
+      - ""
+      - "<white>传输速度: <gray>4 / 次"
+      - "<white>传输间隔: <gray>0.5 秒"
     texture-set: oxidized_copper_corner
 
     transfer:
       interval-ticks: 10
-      items-per-transfer: 1
+      items-per-transfer: 4
 
     # No recipes - obtained via cauldron conversion
 
