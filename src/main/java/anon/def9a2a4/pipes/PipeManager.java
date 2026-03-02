@@ -40,6 +40,7 @@ public class PipeManager {
     private final Map<Location, CachedPath> pathCache = new HashMap<>();
     private final Set<Location> dirtyPaths = new HashSet<>();
     private final Map<Location, Long> sleepUntil = new HashMap<>();
+    private final Map<Location, Long> nullDestRecheckUntil = new HashMap<>();
 
     public PipeManager(PipesPlugin plugin, World world) {
         this.plugin = plugin;
@@ -108,6 +109,7 @@ public class PipeManager {
         PipeData data = pipes.remove(normalized);
         lastTransferTime.remove(normalized);
         sleepUntil.remove(normalized);
+        nullDestRecheckUntil.remove(normalized);
         dirtyPaths.remove(normalized);
         pathCache.clear();
 
@@ -147,7 +149,7 @@ public class PipeManager {
 
         // Remove ALL matching entities, not just the first one
         for (Entity entity : nearby) {
-            String pipeTag = PipeTags.getPipeTag(entity.getScoreboardTags());
+            String pipeTag = PipeTags.getPipeTag(entity);
             if (pipeTag != null && PipeTags.matchesLocation(pipeTag, location)) {
                 entity.remove();
             }
@@ -208,7 +210,7 @@ public class PipeManager {
                 Entity entity = world.getEntity(uuid);
                 if (entity == null) continue;
 
-                String tag = PipeTags.getPipeTag(entity.getScoreboardTags());
+                String tag = PipeTags.getPipeTag(entity);
                 if (tag == null) continue;
 
                 if (PipeTags.isDirectionalTag(tag)) {
@@ -245,8 +247,8 @@ public class PipeManager {
             ItemDisplay dirDisplay = world.spawn(spawnLoc, ItemDisplay.class, entity -> {
                 entity.setItemStack(dirItem);
                 entity.setPersistent(true);
-                entity.addScoreboardTag(PipeTags.createDirectionalTag(normalized, outputFace, variant));
                 entity.setTransformation(dirTransform);
+                PipeTags.addPipeTag(entity, PipeTags.createDirectionalTag(normalized, outputFace, variant));
             });
             finalIds.add(dirDisplay.getUniqueId());
         }
@@ -300,8 +302,8 @@ public class PipeManager {
         ItemDisplay mainDisplay = world.spawn(spawnLoc, ItemDisplay.class, entity -> {
             entity.setItemStack(pipeItem);
             entity.setPersistent(true);
-            entity.addScoreboardTag(PipeTags.createTag(location, facing, variant));
             entity.setTransformation(transformation);
+            PipeTags.addPipeTag(entity, PipeTags.createTag(location, facing, variant));
         });
         displays.add(mainDisplay);
 
@@ -313,8 +315,8 @@ public class PipeManager {
                 ItemDisplay directionalDisplay = world.spawn(spawnLoc, ItemDisplay.class, entity -> {
                     entity.setItemStack(directionalItem);
                     entity.setPersistent(true);
-                    entity.addScoreboardTag(PipeTags.createDirectionalTag(location, outputFace, variant));
                     entity.setTransformation(directionalTransformation);
+                    PipeTags.addPipeTag(entity, PipeTags.createDirectionalTag(location, outputFace, variant));
                 });
                 displays.add(directionalDisplay);
             }
@@ -711,7 +713,9 @@ public class PipeManager {
      * 唤醒某位置的管道（如附近的容器发生变化时可主动调用）。
      */
     public void wakeUpPipe(Location location) {
-        sleepUntil.remove(normalizeLocation(location));
+        Location normalized = normalizeLocation(location);
+        sleepUntil.remove(normalized);
+        nullDestRecheckUntil.remove(normalized); // 同时重置末端探测冷却
     }
 
     /**
@@ -937,9 +941,11 @@ public class PipeManager {
 
         CachedPath cached = pathCache.get(key);
         if (cached != null) {
-            if (isPathStillValid(cached)) {
+            if (isPathStillValid(key, cached)) {
                 return cached; // 缓存命中
             }
+            // 缓存失效，清除以 lastPipeLocation 为键的末端冷却计时
+            nullDestRecheckUntil.remove(normalizeLocation(cached.lastPipeLocation()));
         }
 
         CachedPath fresh = findDestination(pipeLocation, facing, new HashSet<>(), new ArrayList<>());
@@ -947,8 +953,34 @@ public class PipeManager {
         return fresh;
     }
 
-    private boolean isPathStillValid(CachedPath path) {
+    private boolean isPathStillValid(Location pipeKey, CachedPath path) {
         if (path.destination() == null) {
+            Location recheckKey = normalizeLocation(path.lastPipeLocation());
+            long recheckMs = plugin.getPipeConfig().getEndRecheckSleepMs();
+            if (recheckMs > 0) {
+                Long recheckAt = nullDestRecheckUntil.get(recheckKey);
+                long now = System.currentTimeMillis();
+                if (recheckAt != null && now < recheckAt) {
+                    return true; // 冷却中，跳过末端检测
+                }
+            }
+
+            // 冷却到期，检查末端是否新放置了容器或管道
+            Location lastPipe = path.lastPipeLocation();
+            PipeData lastPipeData = getPipeData(recheckKey);
+            if (lastPipeData != null) {
+                Block endBlock = lastPipe.getBlock().getRelative(lastPipeData.facing());
+                Location endLoc = normalizeLocation(endBlock.getLocation());
+                ContainerAdapter endAdapter = ContainerAdapterRegistry.findAdapter(endBlock).orElse(null);
+                if ((endAdapter != null && endAdapter.canReceive(endBlock)) || getPipeData(endLoc) != null) {
+                    return false; // 末端出现了新的容器或管道，需要重新寻路
+                }
+            }
+
+            // 仍无目标，重置冷却计时
+            if (recheckMs > 0) {
+                nullDestRecheckUntil.put(recheckKey, System.currentTimeMillis() + recheckMs);
+            }
             return true;
         }
 
@@ -1017,6 +1049,7 @@ public class PipeManager {
         lastTransferTime.clear();
         pathCache.clear();
         dirtyPaths.clear();
+        nullDestRecheckUntil.clear();
     }
 
     /**
@@ -1028,11 +1061,9 @@ public class PipeManager {
         int removed = 0;
         for (Entity entity : world.getEntities()) {
             if (!(entity instanceof ItemDisplay)) continue;
+            if (!PipeTags.isPipeEntity(entity)) continue;
 
-            Set<String> tags = entity.getScoreboardTags();
-            if (!PipeTags.isPipeEntity(tags)) continue;
-
-            String pipeTag = PipeTags.getPipeTag(tags);
+            String pipeTag = PipeTags.getPipeTag(entity);
             if (pipeTag == null) continue;
 
             Location blockLoc = PipeTags.parseLocation(pipeTag, world);
@@ -1058,11 +1089,9 @@ public class PipeManager {
         int count = 0;
         for (Entity entity : world.getEntities()) {
             if (!(entity instanceof ItemDisplay)) continue;
+            if (!PipeTags.isPipeEntity(entity)) continue;
 
-            Set<String> tags = entity.getScoreboardTags();
-            if (!PipeTags.isPipeEntity(tags)) continue;
-
-            String pipeTag = PipeTags.getPipeTag(tags);
+            String pipeTag = PipeTags.getPipeTag(entity);
             if (pipeTag == null) continue;
 
             Location blockLoc = PipeTags.parseLocation(pipeTag, world);
@@ -1171,7 +1200,7 @@ public class PipeManager {
         for (Entity entity : chunk.getEntities()) {
             if (!(entity instanceof ItemDisplay)) continue;
 
-            String pipeTag = PipeTags.getPipeTag(entity.getScoreboardTags());
+            String pipeTag = PipeTags.getPipeTag(entity);
             if (pipeTag == null) continue;
 
             Location location = PipeTags.parseLocation(pipeTag, world);

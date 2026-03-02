@@ -223,6 +223,15 @@ public class PipeListener implements Listener {
                 if (isCorner || face == pipeFacing || face == pipeFacing.getOppositeFace()) {
                     manager.updateDisplayEntity(adjacentLoc);
                 }
+                // 若变化的方块正好位于该管道的输出方向，立即唤醒管道（避免 end-recheck sleep 延迟响应）
+                if (pipeFacing == face.getOppositeFace()) {
+                    manager.wakeUpPipe(adjacentLoc);
+                    manager.invalidatePath(adjacentLoc);
+                }
+                // 若变化的方块正好位于该管道的输入方向，立即唤醒管道（避免 source-empty sleep 延迟响应）
+                if (pipeFacing == face) {
+                    manager.wakeUpPipe(adjacentLoc);
+                }
             }
         }
     }

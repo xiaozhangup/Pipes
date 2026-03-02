@@ -30,6 +30,9 @@ global:
       # 目标容器已满且无法绕路时，该管道暂停检测的时长（ticks）
       # 设为 0 禁用此优化
       dest-full-ticks: 80
+      # 管道末端无容器（物品掉落地面）时，重新检测末端是否放置了容器的间隔（ticks）
+      # 设为 0 禁用此优化（每个传输周期都检测）
+      end-recheck-ticks: 40
 
 # Pipe variants - define as many as needed
 # Each variant references a texture-set from display.yml

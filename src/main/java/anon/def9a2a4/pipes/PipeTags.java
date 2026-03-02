@@ -1,18 +1,19 @@
 package anon.def9a2a4.pipes;
 
 import org.bukkit.Location;
+import org.bukkit.NamespacedKey;
 import org.bukkit.World;
 import org.bukkit.block.BlockFace;
-
-import java.util.Set;
+import org.bukkit.entity.Entity;
+import org.bukkit.persistence.PersistentDataType;
 
 /**
- * Utility class for scoreboard tags used to identify pipe display entities.
+ * Utility class for PersistentDataContainer used to identify pipe displayx entities.
  *
  * Tag format: pipe:{variant_id}:{x}_{y}_{z}_{facing}
  */
 public final class PipeTags {
-    public static final String TAG_PREFIX = "pipe:";
+    public static final NamespacedKey PIPE_TAG_KEY = new NamespacedKey("pipe", "tag");
 
     public static final String DIRECTIONAL_SUFFIX = "_dir";
 
@@ -22,7 +23,7 @@ public final class PipeTags {
      * Create a tag for a pipe at the given location with the given facing direction and variant.
      */
     public static String createTag(Location location, BlockFace facing, PipeVariant variant) {
-        return TAG_PREFIX + variant.getId() + ":" +
+        return variant.getId() + ":" +
                 location.getBlockX() + "_" +
                 location.getBlockY() + "_" +
                 location.getBlockZ() + "_" +
@@ -46,32 +47,22 @@ public final class PipeTags {
     /**
      * Check if an entity has any pipe tag.
      */
-    public static boolean isPipeEntity(Set<String> tags) {
-        for (String tag : tags) {
-            if (isPipeTag(tag)) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    /**
-     * Check if a single tag is a pipe tag.
-     */
-    public static boolean isPipeTag(String tag) {
-        return tag != null && tag.startsWith(TAG_PREFIX);
+    public static boolean isPipeEntity(Entity entity) {
+        return entity.getPersistentDataContainer().has(PIPE_TAG_KEY, PersistentDataType.STRING);
     }
 
     /**
      * Extract the pipe tag from an entity's tags.
      */
-    public static String getPipeTag(Set<String> tags) {
-        for (String tag : tags) {
-            if (isPipeTag(tag)) {
-                return tag;
-            }
-        }
-        return null;
+    public static String getPipeTag(Entity entity) {
+        return entity.getPersistentDataContainer().get(PIPE_TAG_KEY, PersistentDataType.STRING);
+    }
+
+    /**
+     * Add a pipe tag to an entity, replacing any existing pipe tag.
+     */
+    public static void addPipeTag(Entity entity, String newTag) {
+        entity.getPersistentDataContainer().set(PIPE_TAG_KEY, PersistentDataType.STRING, newTag);
     }
 
     /**
@@ -87,13 +78,10 @@ public final class PipeTags {
             workingTag = workingTag.substring(0, workingTag.length() - DIRECTIONAL_SUFFIX.length());
         }
 
-        // Format: pipe:{variant_id}:{data}
-        if (workingTag.startsWith(TAG_PREFIX)) {
-            String remainder = workingTag.substring(TAG_PREFIX.length());
-            int colonIdx = remainder.indexOf(':');
-            if (colonIdx > 0) {
-                return remainder.substring(0, colonIdx);
-            }
+        // Format: {variant_id}:{data}
+        int colonIdx = workingTag.indexOf(':');
+        if (colonIdx > 0) {
+            return workingTag.substring(0, colonIdx);
         }
 
         return null;
@@ -111,13 +99,10 @@ public final class PipeTags {
             workingTag = workingTag.substring(0, workingTag.length() - DIRECTIONAL_SUFFIX.length());
         }
 
-        // Format: pipe:{variant_id}:{data}
-        if (workingTag.startsWith(TAG_PREFIX)) {
-            String remainder = workingTag.substring(TAG_PREFIX.length());
-            int colonIdx = remainder.indexOf(':');
-            if (colonIdx > 0 && colonIdx < remainder.length() - 1) {
-                return remainder.substring(colonIdx + 1);
-            }
+        // Format: {variant_id}:{data}
+        int colonIdx = workingTag.indexOf(':');
+        if (colonIdx > 0 && colonIdx < workingTag.length() - 1) {
+            return workingTag.substring(colonIdx + 1);
         }
 
         return null;
