@@ -30,7 +30,8 @@ import java.util.UUID;
 
 public class PipeManager {
 
-    private record CachedPath(Location destination, Location lastPipeLocation, List<Location> pipeChain) {}
+    private record CachedPath(Location destination, Location lastPipeLocation,
+                               List<Location> pipeChain, int minItemsPerTransfer) {}
 
     private final PipesPlugin plugin;
     private final int offset;
@@ -43,6 +44,7 @@ public class PipeManager {
     private final Set<Location> dirtyPaths = new HashSet<>();
     private final Map<Location, Long> sleepUntil = new HashMap<>();
     private final Map<Location, Long> nullDestRecheckUntil = new HashMap<>();
+    private final Map<Location, Set<Location>> chainMembership = new HashMap<>();
 
     public PipeManager(PipesPlugin plugin, World world) {
         this.plugin = plugin;
@@ -88,22 +90,21 @@ public class PipeManager {
     public void registerPipe(Location location, BlockFace facing, List<UUID> displayEntityIds, PipeVariant variant) {
         Location normalized = normalizeLocation(location);
         pipes.put(normalized, new PipeData(facing, displayEntityIds, variant));
-        // 新管道可能让已有管道的路径在此「拐弯」，全量清缓存保证正确性。
-        // 批量 scanChunk 时每次 registerPipe 都会清，但缓存在首次传输前会被按需重建，
-        // 开销均摊到各自第一次 transferItems，而非全压在同一 tick。
-        pathCache.clear();
+        evictCacheByMember(normalized);
         dirtyPaths.add(normalized);
     }
 
     /**
-     * 标记单根管道路径失效，用于传输量参数等局部变化，不影响网络拓扑时使用。
-     * 拓扑变化（管道增删、区块事件）应调用 pathCache.clear()。
+     * 精准驱逐以 {@code location} 为起点的路径缓存条目。
+     * 适用于管道输出方向前方的方块发生变化时（放置/破坏容器或管道），
+     * 使该管道在下一个传输 tick 时重新寻路。
+     * 拓扑变化（管道本身增删）由 registerPipe / unregisterPipe 内部调用 evictCacheByMember 处理。
      *
-     * @param location 路径需要重算的管道位置
+     * @param location 需要重算路径的管道位置
      */
     public void invalidatePath(Location location) {
         Location normalized = normalizeLocation(location);
-        dirtyPaths.add(normalized);
+        evictCacheEntry(normalized);
     }
 
     public void unregisterPipe(Location location) {
@@ -113,7 +114,7 @@ public class PipeManager {
         sleepUntil.remove(normalized);
         nullDestRecheckUntil.remove(normalized);
         dirtyPaths.remove(normalized);
-        pathCache.clear();
+        evictCacheByMember(normalized);
 
         if (location.getWorld() != world) throw new RuntimeException("Location world does not match PipeManager world");
         if (world == null) return;
@@ -242,11 +243,9 @@ public class PipeManager {
             }
         }
 
-        // 对路径缓存做一次性清理：移除链中包含任意已转换位置的条目
-        if (!convertedLocations.isEmpty()) {
-            pathCache.entrySet().removeIf(
-                e -> e.getValue().pipeChain().stream().anyMatch(convertedLocations::contains)
-            );
+        // 对路径缓存做一次性清理：精准驱逐链路经过任意已转换位置的缓存条目
+        for (Location loc : convertedLocations) {
+            evictCacheByMember(loc);
         }
     }
 
@@ -349,7 +348,7 @@ public class PipeManager {
 
         // 更新 PipeData 中的 display UUID 列表
         pipes.put(normalized, new PipeData(data.facing(), finalIds, data.variant()));
-        pathCache.clear();
+        evictCacheByMember(normalized);
     }
 
     /**
@@ -849,7 +848,7 @@ public class PipeManager {
 
         // 从缓存获取路径，minItems 从 pipeChain 动态计算
         CachedPath path = getOrBuildPath(pipeLocation, facing);
-        int transferAmount = calcMinItems(path.pipeChain(), startingMax);
+        int transferAmount = path.minItemsPerTransfer();
         toTransfer.setAmount(Math.min(transferAmount, toTransfer.getAmount()));
 
         boolean transferred = false;
@@ -970,7 +969,7 @@ public class PipeManager {
 
                 Set<Location> visited = new HashSet<>(baseVisited);
                 visited.add(loc); // 标记转角自身，防止重入
-                CachedPath altPath = findDestination(adjLoc, adjPipeData.facing(), visited, new ArrayList<>());
+                CachedPath altPath = findDestination(adjLoc, adjPipeData.facing(), visited, new ArrayList<>(), Integer.MAX_VALUE);
                 if (altPath.destination() == null) continue;
 
                 Block destBlock = altPath.destination().getBlock();
@@ -1030,21 +1029,62 @@ public class PipeManager {
         Location key = normalizeLocation(pipeLocation);
 
         if (dirtyPaths.remove(key)) {
-            pathCache.remove(key);
+            evictCacheEntry(key);
         }
 
         CachedPath cached = pathCache.get(key);
         if (cached != null) {
             if (isPathStillValid(key, cached)) {
-                return cached; // 缓存命中
+                return cached;
             }
-            // 缓存失效，清除以 lastPipeLocation 为键的末端冷却计时
-            nullDestRecheckUntil.remove(normalizeLocation(cached.lastPipeLocation()));
+            evictCacheEntry(key);
         }
 
-        CachedPath fresh = findDestination(pipeLocation, facing, new HashSet<>(), new ArrayList<>());
+        CachedPath fresh = findDestination(pipeLocation, facing, new HashSet<>(), new ArrayList<>(), Integer.MAX_VALUE);
         pathCache.put(key, fresh);
+        for (Location member : fresh.pipeChain()) {
+            chainMembership.computeIfAbsent(member, k -> new HashSet<>()).add(key);
+        }
         return fresh;
+    }
+
+    /**
+     * 驱逐单条路径缓存并同步清理反向索引。
+     */
+    private void evictCacheEntry(Location key) {
+        CachedPath old = pathCache.remove(key);
+        if (old == null) return;
+        nullDestRecheckUntil.remove(normalizeLocation(old.lastPipeLocation()));
+        for (Location member : old.pipeChain()) {
+            Set<Location> starts = chainMembership.get(member);
+            if (starts != null) {
+                starts.remove(key);
+                if (starts.isEmpty()) chainMembership.remove(member);
+            }
+        }
+    }
+
+    /**
+     * 通过反向索引精准驱逐所有链路经过 {@code member} 的缓存条目。
+     * O(出度链路数)，与网络总规模无关。
+     */
+    private void evictCacheByMember(Location member) {
+        Set<Location> starts = chainMembership.remove(member);
+        if (starts == null) return;
+        for (Location start : starts) {
+            CachedPath old = pathCache.remove(start);
+            if (old == null) continue;
+            nullDestRecheckUntil.remove(normalizeLocation(old.lastPipeLocation()));
+            // 同步清理该路径其他成员对 start 的反向引用
+            for (Location otherMember : old.pipeChain()) {
+                if (otherMember.equals(member)) continue;
+                Set<Location> otherStarts = chainMembership.get(otherMember);
+                if (otherStarts != null) {
+                    otherStarts.remove(start);
+                    if (otherStarts.isEmpty()) chainMembership.remove(otherMember);
+                }
+            }
+        }
     }
 
     private boolean isPathStillValid(Location pipeKey, CachedPath path) {
@@ -1055,15 +1095,14 @@ public class PipeManager {
                 Long recheckAt = nullDestRecheckUntil.get(recheckKey);
                 long now = System.currentTimeMillis();
                 if (recheckAt != null && now < recheckAt) {
-                    return true; // 冷却中，跳过末端检测
+                    return true; // 冷却中，O(1)
                 }
             }
 
             // 冷却到期，检查末端是否新放置了容器或管道
-            Location lastPipe = path.lastPipeLocation();
             PipeData lastPipeData = getPipeData(recheckKey);
             if (lastPipeData != null) {
-                Block endBlock = lastPipe.getBlock().getRelative(lastPipeData.facing());
+                Block endBlock = recheckKey.getBlock().getRelative(lastPipeData.facing());
                 Location endLoc = normalizeLocation(endBlock.getLocation());
                 ContainerAdapter endAdapter = ContainerAdapterRegistry.findAdapter(endBlock).orElse(null);
                 if ((endAdapter != null && endAdapter.canReceive(endBlock)) || getPipeData(endLoc) != null) {
@@ -1080,61 +1119,42 @@ public class PipeManager {
 
         Block destBlock = path.destination().getBlock();
         ContainerAdapter destAdapter = ContainerAdapterRegistry.findAdapter(destBlock).orElse(null);
-        if (destAdapter == null || !destAdapter.canReceive(destBlock)) {
-            return false;
-        }
-
-        List<Location> chain = path.pipeChain();
-        for (int i = 0; i < chain.size() - 1; i++) {
-            PipeData pipeData = getPipeData(chain.get(i));
-            if (pipeData == null) continue; // 管道已被移除，pathCache.clear() 会处理
-            Block nextBlock = chain.get(i).getBlock().getRelative(pipeData.facing());
-            ContainerAdapter midAdapter = ContainerAdapterRegistry.findAdapter(nextBlock).orElse(null);
-            if (midAdapter != null && midAdapter.canReceive(nextBlock)) {
-                return false; // 链条中途出现了新容器，路径需要重建
-            }
-        }
-
-        return true;
-    }
-
-    private int calcMinItems(List<Location> pipeChain, int startingMax) {
-        int min = startingMax;
-        for (Location loc : pipeChain) {
-            PipeData d = getPipeData(loc);
-            if (d != null) min = Math.min(min, d.variant().getItemsPerTransfer());
-        }
-        return min;
+        return destAdapter != null && destAdapter.canReceive(destBlock);
     }
 
     private CachedPath findDestination(Location pipeLocation, BlockFace facing,
-                                       Set<Location> visited, List<Location> chain) {
-        chain.add(normalizeLocation(pipeLocation));
+                                       Set<Location> visited, List<Location> chain, int currentMin) {
+        Location normalized = normalizeLocation(pipeLocation);
+        chain.add(normalized);
+
+        // 将本节点的传输速率纳入最小值计算
+        PipeData selfData = getPipeData(normalized);
+        if (selfData != null) currentMin = Math.min(currentMin, selfData.variant().getItemsPerTransfer());
 
         Block nextBlock = pipeLocation.getBlock().getRelative(facing);
         Location nextLoc = normalizeLocation(nextBlock.getLocation());
 
         if (visited.contains(nextLoc)) {
-            return new CachedPath(null, pipeLocation, chain);
+            return new CachedPath(null, pipeLocation, chain, currentMin);
         }
         visited.add(nextLoc);
 
         ContainerAdapter destAdapter = ContainerAdapterRegistry.findAdapter(nextBlock).orElse(null);
         if (destAdapter != null && destAdapter.canReceive(nextBlock)) {
-            return new CachedPath(nextLoc, pipeLocation, chain);
+            return new CachedPath(nextLoc, pipeLocation, chain, currentMin);
         }
 
         PipeData nextPipeData = getPipeData(nextLoc);
         if (nextPipeData != null) {
             // If the next pipe is facing INTO this pipe (head-to-head), drop the item
             if (nextPipeData.facing() == facing.getOppositeFace()) {
-                return new CachedPath(null, pipeLocation, chain);
+                return new CachedPath(null, pipeLocation, chain, currentMin);
             }
             // Otherwise, follow the next pipe's direction (same direction, perpendicular, etc.)
-            return findDestination(nextLoc, nextPipeData.facing(), visited, chain);
+            return findDestination(nextLoc, nextPipeData.facing(), visited, chain, currentMin);
         }
 
-        return new CachedPath(null, pipeLocation, chain);
+        return new CachedPath(null, pipeLocation, chain, currentMin);
     }
 
     public void shutdown() {
@@ -1144,6 +1164,7 @@ public class PipeManager {
         pathCache.clear();
         dirtyPaths.clear();
         nullDestRecheckUntil.clear();
+        chainMembership.clear();
     }
 
     /**
@@ -1362,7 +1383,7 @@ public class PipeManager {
             if (locChunkX == chunkX && locChunkZ == chunkZ) {
                 lastTransferTime.remove(loc);
                 dirtyPaths.remove(loc);
-                pathCache.clear();
+                evictCacheByMember(loc);
                 return true;
             }
             return false;
