@@ -53,6 +53,7 @@ public class PipesPlugin extends JavaPlugin {
     private WorldManager worldManager;
 //    private RecipeUnlockListener recipeUnlockListener;
     private CauldronConversionListener cauldronConversionListener;
+    private OxidationListener oxidationListener;
 //    private ConversionRecipeCraftListener conversionRecipeCraftListener;
 
     @Override
@@ -72,11 +73,13 @@ public class PipesPlugin extends JavaPlugin {
         worldManager = new WorldManager(this, pipeManager);
 //        recipeUnlockListener = new RecipeUnlockListener(this, recipeManager);
         cauldronConversionListener = new CauldronConversionListener(this);
+        oxidationListener = new OxidationListener(this, pipeManager);
 //        conversionRecipeCraftListener = new ConversionRecipeCraftListener(this, recipeManager);
         getServer().getPluginManager().registerEvents(new PipeListener(this, pipeManager), this);
         getServer().getPluginManager().registerEvents(worldManager, this);
 //        getServer().getPluginManager().registerEvents(recipeUnlockListener, this);
         getServer().getPluginManager().registerEvents(cauldronConversionListener, this);
+        getServer().getPluginManager().registerEvents(oxidationListener, this);
 //        getServer().getPluginManager().registerEvents(conversionRecipeCraftListener, this);
 
         getLogger().info("Pipes enabled!");
@@ -84,6 +87,9 @@ public class PipesPlugin extends JavaPlugin {
 
     @Override
     public void onDisable() {
+        if (oxidationListener != null) {
+            oxidationListener.shutdown();
+        }
         for (PipeManager manager : pipeManager.values()) {
             manager.shutdown();
         }
@@ -122,6 +128,9 @@ public class PipesPlugin extends JavaPlugin {
 
                 // Reload cauldron conversions
                 cauldronConversionListener.loadConversions();
+
+                // Reload oxidation config
+                oxidationListener.reload();
 
                 sender.sendMessage(Component.text("Pipes config reloaded!")
                         .color(NamedTextColor.GREEN));

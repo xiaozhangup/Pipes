@@ -3,12 +3,14 @@ package anon.def9a2a4.pipes;
 import org.bukkit.*;
 import org.bukkit.block.Block;
 import org.bukkit.block.BlockFace;
+import org.bukkit.block.Skull;
 import org.bukkit.block.data.Directional;
 import org.bukkit.block.data.Rotatable;
 import org.bukkit.entity.Entity;
 import org.bukkit.entity.Item;
 import org.bukkit.entity.ItemDisplay;
 import org.bukkit.inventory.ItemStack;
+import org.bukkit.inventory.meta.SkullMeta;
 import org.bukkit.util.Transformation;
 import org.bukkit.util.Vector;
 import org.joml.AxisAngle4f;
@@ -153,6 +155,98 @@ public class PipeManager {
             if (pipeTag != null && PipeTags.matchesLocation(pipeTag, location)) {
                 entity.remove();
             }
+        }
+    }
+
+    /**
+     * 就地更换管道的变体（用于氧化、涂蜡、打磨等操作）。
+     * 更新 PipeData、头颅贴图、展示实体贴图及 PDC 标签，不改变位置和朝向。
+     */
+    public void convertPipeVariant(Location location, PipeVariant newVariant) {
+        Location normalized = normalizeLocation(location);
+        applyVariantConversion(normalized, newVariant);
+        pathCache.entrySet().removeIf(e -> e.getValue().pipeChain().contains(normalized));
+    }
+
+    /**
+     * 执行变体替换的核心逻辑（不触碰路径缓存，由调用方统一处理）。
+     */
+    private void applyVariantConversion(Location normalized, PipeVariant newVariant) {
+        PipeData data = pipes.get(normalized);
+        if (data == null) return;
+
+        // 更新 PipeData（朝向和显示实体 UUID 不变，仅替换变体）
+        pipes.put(normalized, new PipeData(data.facing(), data.displayEntityIds(), newVariant));
+
+        // 更新头颅方块贴图
+        Block block = normalized.getBlock();
+        if (block.getState() instanceof Skull skull) {
+            ItemStack headItem = plugin.getHeadItemForDirection(newVariant, data.facing());
+            if (headItem != null && headItem.getItemMeta() instanceof SkullMeta skullMeta) {
+                skull.setOwnerProfile(skullMeta.getOwnerProfile());
+                skull.update(true, false);
+            }
+        }
+
+        // 更新展示实体贴图与 PDC 标签
+        if (data.displayEntityIds() != null) {
+            for (UUID uuid : data.displayEntityIds()) {
+                Entity entity = world.getEntity(uuid);
+                if (!(entity instanceof ItemDisplay display)) continue;
+
+                String oldTag = PipeTags.getPipeTag(entity);
+                if (oldTag == null) continue;
+
+                if (PipeTags.isDirectionalTag(oldTag)) {
+                    BlockFace dirFacing = PipeTags.parseFacing(oldTag);
+                    if (dirFacing == null) continue;
+                    ItemStack newDirItem = plugin.getDirectionalDisplayItem(newVariant, dirFacing);
+                    if (newDirItem != null) display.setItemStack(newDirItem);
+                    PipeTags.addPipeTag(entity, PipeTags.createDirectionalTag(normalized, dirFacing, newVariant));
+                } else {
+                    ItemStack newDisplayItem = plugin.getDisplayItem(newVariant, data.facing());
+                    if (newDisplayItem != null) display.setItemStack(newDisplayItem);
+                    PipeTags.addPipeTag(entity, PipeTags.createTag(normalized, data.facing(), newVariant));
+                }
+            }
+        }
+    }
+
+    /**
+     * 随机氧化检查：遍历所有已加载的可氧化管道，按概率进行变体转换。
+     * 批量收集所有变换位置后，对路径缓存做一次性清理，避免逐根清理的重复扫描。
+     * @param transitions  变体ID → 目标变体ID 的映射
+     * @param chanceNum    概率分子
+     * @param chanceDenom  概率分母
+     * @param random       随机数生成器
+     */
+    public void tickOxidation(Map<String, String> transitions, int chanceNum, int chanceDenom, Random random) {
+        if (transitions.isEmpty()) return;
+
+        // 收集本轮所有需要转换的管道
+        List<Map.Entry<Location, PipeData>> snapshot = new ArrayList<>(pipes.entrySet());
+        Set<Location> convertedLocations = new HashSet<>();
+
+        for (Map.Entry<Location, PipeData> entry : snapshot) {
+            String variantId = entry.getValue().variant().getId();
+            String targetId = transitions.get(variantId);
+            if (targetId == null) continue;
+
+            if (random.nextInt(chanceDenom) < chanceNum) {
+                PipeVariant newVariant = plugin.getVariantRegistry().getVariant(targetId);
+                if (newVariant != null) {
+                    Location normalized = normalizeLocation(entry.getKey());
+                    applyVariantConversion(normalized, newVariant);
+                    convertedLocations.add(normalized);
+                }
+            }
+        }
+
+        // 对路径缓存做一次性清理：移除链中包含任意已转换位置的条目
+        if (!convertedLocations.isEmpty()) {
+            pathCache.entrySet().removeIf(
+                e -> e.getValue().pipeChain().stream().anyMatch(convertedLocations::contains)
+            );
         }
     }
 

@@ -44,7 +44,7 @@ variants:
     lore:
       - "<gray>从其放置的容器或管道中提取物品"
       - ""
-      - "<white>传输速度: <gray>16 / 次"
+      - "<white>传输速度: <gray>48 / 次"
       - "<white>传输间隔: <gray>0.5 秒"
     texture-set: copper  # References texture set in display.yml
 
@@ -53,7 +53,7 @@ variants:
       # Ticks between item transfers (20 ticks = 1 second)
       interval-ticks: 10
       # Number of items to transfer per operation
-      items-per-transfer: 16
+      items-per-transfer: 48
 
     # Crafting recipes (supports multiple recipes per variant)
     recipes:
@@ -73,13 +73,13 @@ variants:
     lore:
       - "<gray>将物品推向放置方向。必须有其他管道输入"
       - ""
-      - "<white>传输速度: <gray>16 / 次"
+      - "<white>传输速度: <gray>48 / 次"
       - "<white>传输间隔: <gray>0.5 秒"
     texture-set: copper_corner  # References texture set in display.yml
 
     transfer:
       interval-ticks: 10
-      items-per-transfer: 16
+      items-per-transfer: 48
 
     recipes:
       - shape:
@@ -106,13 +106,13 @@ variants:
     lore:
       - "<gray>从其放置的容器或管道中提取物品"
       - ""
-      - "<white>传输速度: <gray>24 / 次"
+      - "<white>传输速度: <gray>16 / 次"
       - "<white>传输间隔: <gray>0.5 秒"
     texture-set: iron
 
     transfer:
       interval-ticks: 10
-      items-per-transfer: 24
+      items-per-transfer: 16
 
     recipes:
       - shape:
@@ -131,13 +131,13 @@ variants:
     lore:
       - "<gray>将物品推向放置方向。必须有其他管道输入"
       - ""
-      - "<white>传输速度: <gray>24 / 次"
+      - "<white>传输速度: <gray>16 / 次"
       - "<white>传输间隔: <gray>0.5 秒"
     texture-set: iron_corner
 
     transfer:
       interval-ticks: 10
-      items-per-transfer: 24
+      items-per-transfer: 16
 
     recipes:
       - shape:
@@ -164,13 +164,13 @@ variants:
     lore:
       - "<gray>从其放置的容器或管道中提取物品"
       - ""
-      - "<white>传输速度: <gray>48 / 次"
+      - "<white>传输速度: <gray>24 / 次"
       - "<white>传输间隔: <gray>0.5 秒"
     texture-set: gold
 
     transfer:
       interval-ticks: 10
-      items-per-transfer: 48
+      items-per-transfer: 24
 
     recipes:
       - shape:
@@ -189,13 +189,13 @@ variants:
     lore:
       - "<gray>将物品推向放置方向。必须有其他管道输入"
       - ""
-      - "<white>传输速度: <gray>48 / 次"
+      - "<white>传输速度: <gray>24 / 次"
       - "<white>传输间隔: <gray>0.5 秒"
     texture-set: gold_corner
 
     transfer:
       interval-ticks: 10
-      items-per-transfer: 48
+      items-per-transfer: 24
 
     recipes:
       - shape:
@@ -222,13 +222,13 @@ variants:
     lore:
       - "<gray>从其放置的容器或管道中提取物品"
       - ""
-      - "<white>传输速度: <gray>4 / 次"
+      - "<white>传输速度: <gray>8 / 次"
       - "<white>传输间隔: <gray>0.5 秒"
     texture-set: oxidized_copper
 
     transfer:
       interval-ticks: 10
-      items-per-transfer: 4
+      items-per-transfer: 8
 
     # No recipes - obtained via cauldron conversion
 
@@ -239,15 +239,51 @@ variants:
     lore:
       - "<gray>将物品推向放置方向。必须有其他管道输入"
       - ""
-      - "<white>传输速度: <gray>4 / 次"
+      - "<white>传输速度: <gray>8 / 次"
       - "<white>传输间隔: <gray>0.5 秒"
     texture-set: oxidized_copper_corner
 
     transfer:
       interval-ticks: 10
-      items-per-transfer: 4
+      items-per-transfer: 8
 
     # No recipes - obtained via cauldron conversion
+
+  # Waxed Copper Pipe - apply honeycomb to a copper pipe to prevent oxidation
+  waxed_copper_pipe:
+    behavior: REGULAR
+    display-name: "<white>涂蜡铜质管"
+    lore:
+      - "<gray>从其放置的容器或管道中提取物品"
+      - "<gray>已涂蜡，不会自然氧化"
+      - ""
+      - "<white>传输速度: <gray>48 / 次"
+      - "<white>传输间隔: <gray>0.5 秒"
+    texture-set: waxed_copper
+
+    transfer:
+      interval-ticks: 10
+      items-per-transfer: 48
+
+    # No recipes - obtained by applying honeycomb to a placed copper pipe
+
+  # Waxed Copper Corner Pipe - apply honeycomb to a copper corner pipe to prevent oxidation
+  waxed_copper_corner_pipe:
+    behavior: CORNER
+    display-name: "<white>涂蜡铜质转角管"
+    lore:
+      - "<gray>将物品推向放置方向。必须有其他管道输入"
+      - "<gray>已涂蜡，不会自然氧化"
+      - ""
+      - "<white>传输速度: <gray>48 / 次"
+      - "<white>传输间隔: <gray>0.5 秒"
+    texture-set: waxed_copper_corner
+
+    transfer:
+      interval-ticks: 10
+      items-per-transfer: 48
+
+    # No recipes - obtained by applying honeycomb to a placed copper corner pipe
 
 # Cauldron conversions - throw pipe item into water cauldron to convert
 cauldron-conversions:
@@ -265,3 +301,32 @@ conversion-recipes:
     from-variant: copper_corner_pipe
     catalyst: WATER_BUCKET
     result-amount: 1
+
+# Oxidation settings - copper pipes randomly oxidize over time like vanilla copper blocks
+oxidation:
+  # 是否启用随机氧化机制
+  enabled: true
+  # 每次检查的间隔（ticks，默认 1200 = 60 秒）
+  # 结合 chance-numerator/chance-denominator 控制氧化速率
+  # 默认设置大约 52 分钟完成一次氧化（模拟原版铜块单阶段速率）
+  check-interval-ticks: 1200
+  # 每次检查时发生氧化的概率分子（chance-numerator / chance-denominator）
+  chance-numerator: 21
+  # 概率分母（原版随机刻机制为 1096）
+  chance-denominator: 1096
+  # 氧化转换：哪个变体会自然氧化为哪个变体
+  transitions:
+    copper_pipe: oxidized_copper_pipe
+    copper_corner_pipe: oxidized_copper_corner_pipe
+  # 涂蜡转换：对放置的管道使用蜜脾，将其转换为涂蜡版本
+  wax:
+    copper_pipe: waxed_copper_pipe
+    copper_corner_pipe: waxed_copper_corner_pipe
+  # 用斧头右键去蜡：将涂蜡管道恢复为未涂蜡版本
+  scrape-wax:
+    waxed_copper_pipe: copper_pipe
+    waxed_copper_corner_pipe: copper_corner_pipe
+  # 用斧头右键打磨：将氧化管道恢复为铜管
+  scrape-oxidation:
+    oxidized_copper_pipe: copper_pipe
+    oxidized_copper_corner_pipe: copper_corner_pipe
