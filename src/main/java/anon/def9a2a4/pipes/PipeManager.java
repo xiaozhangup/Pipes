@@ -166,7 +166,7 @@ public class PipeManager {
     public void convertPipeVariant(Location location, PipeVariant newVariant) {
         Location normalized = normalizeLocation(location);
         applyVariantConversion(normalized, newVariant);
-        pathCache.entrySet().removeIf(e -> e.getValue().pipeChain().contains(normalized));
+        evictCacheByMember(normalized);
     }
 
     /**
@@ -790,7 +790,9 @@ public class PipeManager {
             }
         }
 
-        toRemove.forEach(pipes::remove);
+        for (Location loc : toRemove) {
+            unregisterPipe(loc);
+        }
     }
 
     /**
@@ -1382,6 +1384,8 @@ public class PipeManager {
 
             if (locChunkX == chunkX && locChunkZ == chunkZ) {
                 lastTransferTime.remove(loc);
+                sleepUntil.remove(loc);
+                nullDestRecheckUntil.remove(loc);
                 dirtyPaths.remove(loc);
                 evictCacheByMember(loc);
                 return true;
