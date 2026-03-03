@@ -5,7 +5,7 @@ plugins {
 }
 
 group = "anon.def9a2a4"
-version = "0.1.1"
+version = "0.1.2"
 
 java {
     toolchain {

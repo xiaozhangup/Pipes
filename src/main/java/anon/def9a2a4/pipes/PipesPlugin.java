@@ -34,6 +34,7 @@ import org.bukkit.entity.Player;
 
 public class PipesPlugin extends JavaPlugin {
 
+    private static PipesPlugin instance;
     private static final UUID PIPE_PROFILE_UUID = UUID.fromString("00000000-0000-0000-0000-000000000001");
 
     // Maps keyed by variant ID
@@ -58,6 +59,7 @@ public class PipesPlugin extends JavaPlugin {
 
     @Override
     public void onEnable() {
+        instance = this;
         variantRegistry = new VariantRegistry(this);
         loadConfigs();
 
@@ -94,7 +96,12 @@ public class PipesPlugin extends JavaPlugin {
             manager.shutdown();
         }
         pipeManager.clear();
+        instance = null;
         getLogger().info("Pipes disabled!");
+    }
+
+    public static PipesPlugin getInstance() {
+        return instance;
     }
 
     @Override
@@ -538,6 +545,13 @@ public class PipesPlugin extends JavaPlugin {
 
         item.setItemMeta(meta);
         return item;
+    }
+
+    public void notifyBlockChanged(org.bukkit.Location location) {
+        PipeManager manager = pipeManager.get(location.getWorld());
+        if (manager != null) {
+            manager.notifyBlockChanged(location);
+        }
     }
 
     public ItemStack getPipeItem(PipeVariant variant) {

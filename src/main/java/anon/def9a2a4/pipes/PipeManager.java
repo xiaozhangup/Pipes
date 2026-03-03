@@ -257,6 +257,27 @@ public class PipeManager {
         return pipes.get(normalizeLocation(location));
     }
 
+    public void notifyBlockChanged(Location location) {
+        BlockFace[] faces = {BlockFace.NORTH, BlockFace.SOUTH, BlockFace.EAST,
+                BlockFace.WEST, BlockFace.UP, BlockFace.DOWN};
+
+        for (BlockFace face : faces) {
+            Location adjacentLoc = location.getBlock().getRelative(face).getLocation();
+            PipeData pipeData = getPipeData(adjacentLoc);
+            if (pipeData == null) continue;
+
+            BlockFace pipeFacing = pipeData.facing();
+            boolean isCorner = pipeData.variant().getBehaviorType() == BehaviorType.CORNER;
+            if (isCorner || face == pipeFacing || face == pipeFacing.getOppositeFace()) {
+                updateDisplayEntity(adjacentLoc);
+            }
+            if (pipeFacing == face.getOppositeFace()) {
+                wakeUpPipe(adjacentLoc);
+                invalidatePath(adjacentLoc);
+            }
+        }
+    }
+
     public void updateDisplayEntity(Location pipeLocation) {
         Location normalized = normalizeLocation(pipeLocation);
         PipeData data = pipes.get(normalized);
