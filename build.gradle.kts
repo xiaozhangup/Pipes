@@ -1,6 +1,7 @@
 plugins {
     java
     id("com.gradleup.shadow") version "9.3.0"
+    id("maven-publish")
 }
 
 group = "anon.def9a2a4"
@@ -47,5 +48,19 @@ tasks {
         mergeServiceFiles()
         archiveClassifier.set("")
         archiveBaseName.set("Pipes")
+    }
+}
+
+publishing {
+    publications {
+        create<MavenPublication>("mavenJava") {
+            from(components["java"])
+            groupId = project.group.toString()
+            artifactId = "pipes"
+            version = project.version.toString()
+        }
+    }
+    repositories {
+        mavenLocal()
     }
 }
