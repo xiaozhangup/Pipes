@@ -2,6 +2,8 @@ package anon.def9a2a4.pipes;
 
 import com.destroystokyo.paper.profile.PlayerProfile;
 import com.destroystokyo.paper.profile.ProfileProperty;
+import kotlin.jvm.functions.Function1;
+import me.xiaozhangup.slimecargo.utils.FlexibleItem;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
 import net.kyori.adventure.text.format.TextDecoration;
@@ -83,6 +85,7 @@ public class PipesPlugin extends JavaPlugin {
         getServer().getPluginManager().registerEvents(cauldronConversionListener, this);
         getServer().getPluginManager().registerEvents(oxidationListener, this);
 //        getServer().getPluginManager().registerEvents(conversionRecipeCraftListener, this);
+        FlexibleItem.INSTANCE.getFlexibleItem().put("pipes", s -> getPipeItem(variantRegistry.getVariant(s)));
 
         getLogger().info("Pipes enabled!");
     }

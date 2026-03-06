@@ -1,6 +1,7 @@
 plugins {
     java
     id("com.gradleup.shadow") version "9.3.0"
+    id("org.jetbrains.kotlin.jvm") version "2.1.21"
     id("maven-publish")
 }
 
@@ -24,6 +25,7 @@ repositories {
 
 dependencies {
     compileOnly("me.xiaozhangup.octopus:octopus-api:1.21.11-R0.1-SNAPSHOT")
+    compileOnly("me.xiaozhangup:SlimeCargoNext:1.0.2")
 }
 
 tasks {
