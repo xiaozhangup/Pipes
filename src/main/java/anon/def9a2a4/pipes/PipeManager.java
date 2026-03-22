@@ -862,17 +862,40 @@ public class PipeManager {
 
         // Start with this pipe's items per transfer and find minimum along path
         int startingMax = data.variant().getItemsPerTransfer();
-        ItemStack toTransfer = sourceAdapter.peekExtract(sourceBlock, startingMax);
-        if (toTransfer == null) {
-            // 源容器为空，进入休眠：接下来若干毫秒内不再检测此管道
-            sleepPipe(pipeLocation, plugin.getPipeConfig().getSourceEmptySleepMs());
-            return false;
-        }
 
-        // 从缓存获取路径，minItems 从 pipeChain 动态计算
+        // 先获取路径（含缓存），以便在提取前了解目的地的物品需求
         CachedPath path = getOrBuildPath(pipeLocation, facing);
         int transferAmount = path.minItemsPerTransfer();
-        toTransfer.setAmount(Math.min(transferAmount, toTransfer.getAmount()));
+        int maxToExtract = Math.min(startingMax, transferAmount);
+
+        // 检查目的地是否声明了所需物品，若声明则针对性地从源容器提取
+        ItemStack requested = null;
+        if (path.destination() != null) {
+            Block destBlockCheck = path.destination().getBlock();
+            ContainerAdapter destAdapterCheck = ContainerAdapterRegistry.findAdapter(destBlockCheck).orElse(null);
+            if (destAdapterCheck != null) {
+                requested = destAdapterCheck.requestedItem(destBlockCheck);
+            }
+        }
+
+        ItemStack toTransfer;
+        if (requested != null) {
+            toTransfer = sourceAdapter.peekExtractMatching(sourceBlock, maxToExtract, requested);
+            if (toTransfer == null) {
+                // 源容器中没有目的地所需的物品；若源容器已完全为空则休眠，否则跳过本次传输
+                if (!sourceAdapter.hasItems(sourceBlock)) {
+                    sleepPipe(pipeLocation, plugin.getPipeConfig().getSourceEmptySleepMs());
+                }
+                return false;
+            }
+        } else {
+            toTransfer = sourceAdapter.peekExtract(sourceBlock, maxToExtract);
+            if (toTransfer == null) {
+                // 源容器为空，进入休眠：接下来若干毫秒内不再检测此管道
+                sleepPipe(pipeLocation, plugin.getPipeConfig().getSourceEmptySleepMs());
+                return false;
+            }
+        }
 
         boolean transferred = false;
         if (path.destination() == null) {
