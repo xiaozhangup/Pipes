@@ -12,7 +12,7 @@ import org.jetbrains.annotations.Nullable;
  * <p>
  * 与原版漏斗行为保持一致：
  * <ul>
- *   <li>提取：仅从药水瓶格（slot 0-2）取出物品，不提取原料格或燃料格。</li>
+ *   <li>提取：仅从药水瓶格（slot 0-2）取出物品，且酿造进行中时不提取；不提取原料格或燃料格。</li>
  *   <li>存入：依次尝试原料格（slot 3）、燃料格（slot 4）、药水瓶格（slot 0-2）。</li>
  * </ul>
  *
@@ -35,6 +35,8 @@ public class BrewingStandContainerAdapter implements ContainerAdapter {
     @Override
     public boolean hasItems(Block block) {
         if (!(block.getState() instanceof BrewingStand stand)) return false;
+        // 正在酿造时不提取药水瓶格中的物品
+        if (stand.getBrewingTime() > 0) return false;
         BrewerInventory inv = stand.getInventory();
         for (int i = 0; i < BOTTLE_SLOTS; i++) {
             ItemStack item = inv.getItem(i);
@@ -46,6 +48,8 @@ public class BrewingStandContainerAdapter implements ContainerAdapter {
     @Override
     public @Nullable ItemStack peekExtract(Block block, int maxAmount) {
         if (!(block.getState() instanceof BrewingStand stand)) return null;
+        // 正在酿造时不提取药水瓶格中的物品
+        if (stand.getBrewingTime() > 0) return null;
         BrewerInventory inv = stand.getInventory();
         for (int i = 0; i < BOTTLE_SLOTS; i++) {
             ItemStack item = inv.getItem(i);
