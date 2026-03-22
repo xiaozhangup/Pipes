@@ -1,6 +1,5 @@
 package anon.def9a2a4.pipes.adapter;
 
-import anon.def9a2a4.pipes.ContainerAdapter;
 import org.bukkit.block.Block;
 import org.bukkit.block.BrewingStand;
 import org.bukkit.inventory.BrewerInventory;
@@ -35,7 +34,6 @@ public class BrewingStandContainerAdapter implements ContainerAdapter {
     @Override
     public boolean hasItems(Block block) {
         if (!(block.getState() instanceof BrewingStand stand)) return false;
-        // 正在酿造时不提取药水瓶格中的物品
         if (stand.getBrewingTime() > 0) return false;
         BrewerInventory inv = stand.getInventory();
         for (int i = 0; i < BOTTLE_SLOTS; i++) {
@@ -48,7 +46,6 @@ public class BrewingStandContainerAdapter implements ContainerAdapter {
     @Override
     public @Nullable ItemStack peekExtract(Block block, int maxAmount) {
         if (!(block.getState() instanceof BrewingStand stand)) return null;
-        // 正在酿造时不提取药水瓶格中的物品
         if (stand.getBrewingTime() > 0) return null;
         BrewerInventory inv = stand.getInventory();
         for (int i = 0; i < BOTTLE_SLOTS; i++) {
@@ -106,7 +103,6 @@ public class BrewingStandContainerAdapter implements ContainerAdapter {
     public boolean canReceive(Block block) {
         if (!(block.getState() instanceof BrewingStand stand)) return false;
         BrewerInventory inv = stand.getInventory();
-        // 任一格子（原料格、燃料格或药水瓶格）有空位即可接受
         for (int i = 0; i < inv.getSize(); i++) {
             ItemStack existing = inv.getItem(i);
             if (existing == null || existing.getType().isAir()

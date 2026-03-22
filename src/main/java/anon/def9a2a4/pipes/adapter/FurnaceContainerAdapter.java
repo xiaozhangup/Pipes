@@ -1,6 +1,5 @@
 package anon.def9a2a4.pipes.adapter;
 
-import anon.def9a2a4.pipes.ContainerAdapter;
 import org.bukkit.block.Block;
 import org.bukkit.block.Furnace;
 import org.bukkit.inventory.FurnaceInventory;

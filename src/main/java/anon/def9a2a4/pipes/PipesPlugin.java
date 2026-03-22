@@ -70,9 +70,6 @@ public class PipesPlugin extends JavaPlugin {
 
         loadItems();
 
-        ContainerAdapterRegistry.register(new FurnaceContainerAdapter());
-        ContainerAdapterRegistry.register(new BrewingStandContainerAdapter());
-
 //        recipeManager = new RecipeManager(this);
 //        recipeManager.registerRecipes();
 

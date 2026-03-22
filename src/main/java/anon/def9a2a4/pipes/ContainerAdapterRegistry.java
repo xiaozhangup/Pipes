@@ -1,6 +1,8 @@
 package anon.def9a2a4.pipes;
 
 import anon.def9a2a4.pipes.adapter.ContainerAdapter;
+import anon.def9a2a4.pipes.adapter.BrewingStandContainerAdapter;
+import anon.def9a2a4.pipes.adapter.FurnaceContainerAdapter;
 import anon.def9a2a4.pipes.adapter.VanillaContainerAdapter;
 import org.bukkit.block.Block;
 
@@ -21,7 +23,11 @@ import java.util.Optional;
 public final class ContainerAdapterRegistry {
 
     /** 内置原版容器适配器，始终作为 fallback。 */
-    private static final ContainerAdapter VANILLA = new VanillaContainerAdapter();
+    private static final List<ContainerAdapter> VANILLA = List.of(
+            new FurnaceContainerAdapter(),
+            new BrewingStandContainerAdapter(),
+            new VanillaContainerAdapter()
+    );
 
     /** 已注册的自定义适配器列表（越早注册优先级越高）。 */
     private static final List<ContainerAdapter> adapters = new ArrayList<>();
@@ -64,8 +70,10 @@ public final class ContainerAdapterRegistry {
                 return Optional.of(adapter);
             }
         }
-        if (VANILLA.canHandle(block)) {
-            return Optional.of(VANILLA);
+        for (ContainerAdapter adapter : VANILLA) {
+            if (adapter.canHandle(block)) {
+                return Optional.of(adapter);
+            }
         }
         return Optional.empty();
     }
