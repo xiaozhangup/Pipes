@@ -89,11 +89,11 @@ public class BrewingStandContainerAdapter implements ContainerAdapter {
         if (!(block.getState() instanceof BrewingStand stand)) return null;
         BrewerInventory inv = stand.getInventory();
         ItemStack ingredient = inv.getItem(INGREDIENT_SLOT);
-        if (ingredient != null && !ingredient.getType().isAir()) {
+        if (ingredient != null && !ingredient.getType().isAir() && ingredient.getAmount() < ingredient.getMaxStackSize()) {
             return ingredient.clone();
         }
         ItemStack fuel = inv.getItem(FUEL_SLOT);
-        if (fuel != null && !fuel.getType().isAir()) {
+        if (fuel != null && !fuel.getType().isAir() && fuel.getAmount() < fuel.getMaxStackSize()) {
             return fuel.clone();
         }
         return null;

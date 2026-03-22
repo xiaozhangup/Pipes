@@ -65,11 +65,11 @@ public class FurnaceContainerAdapter implements ContainerAdapter {
         if (!(block.getState() instanceof Furnace furnace)) return null;
         FurnaceInventory inv = furnace.getInventory();
         ItemStack smelting = inv.getSmelting();
-        if (smelting != null && !smelting.getType().isAir()) {
+        if (smelting != null && !smelting.getType().isAir() && smelting.getAmount() < smelting.getMaxStackSize()) {
             return smelting.clone();
         }
         ItemStack fuel = inv.getFuel();
-        if (fuel != null && !fuel.getType().isAir()) {
+        if (fuel != null && !fuel.getType().isAir() && fuel.getAmount() < fuel.getMaxStackSize()) {
             return fuel.clone();
         }
         return null;
