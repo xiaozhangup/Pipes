@@ -83,6 +83,25 @@ public class BrewingStandContainerAdapter implements ContainerAdapter {
         }
     }
 
+    /**
+     * 若酿造台原料格或燃料格已有物品，则声明需要更多同类物品，以便管道针对性地从源容器提取。
+     * 原料格优先于燃料格。若两者均为空则返回 {@code null}，使用默认传输行为。
+     */
+    @Override
+    public @Nullable ItemStack requestedItem(Block block) {
+        if (!(block.getState() instanceof BrewingStand stand)) return null;
+        BrewerInventory inv = stand.getInventory();
+        ItemStack ingredient = inv.getItem(INGREDIENT_SLOT);
+        if (ingredient != null && !ingredient.getType().isAir()) {
+            return ingredient.clone();
+        }
+        ItemStack fuel = inv.getItem(FUEL_SLOT);
+        if (fuel != null && !fuel.getType().isAir()) {
+            return fuel.clone();
+        }
+        return null;
+    }
+
     @Override
     public boolean canReceive(Block block) {
         if (!(block.getState() instanceof BrewingStand stand)) return false;

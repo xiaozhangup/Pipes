@@ -47,6 +47,20 @@ final class VanillaContainerAdapter implements ContainerAdapter {
     }
 
     @Override
+    public @Nullable ItemStack peekExtractMatching(Block block, int maxAmount, ItemStack filter) {
+        if (!(block.getState() instanceof Container container)) return null;
+        Inventory inv = container.getInventory();
+        for (ItemStack item : inv.getContents()) {
+            if (item != null && !item.getType().isAir() && item.isSimilar(filter)) {
+                ItemStack result = item.clone();
+                result.setAmount(Math.min(maxAmount, item.getAmount()));
+                return result;
+            }
+        }
+        return null;
+    }
+
+    @Override
     public void commitExtract(Block block, ItemStack extracted) {
         // 重新获取最新方块状态（保证数据最新），找到与 extracted 匹配的第一个 slot 并扣除
         if (!(block.getState() instanceof Container container)) return;

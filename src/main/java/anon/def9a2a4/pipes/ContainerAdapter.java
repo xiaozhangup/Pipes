@@ -12,7 +12,8 @@ import org.jetbrains.annotations.Nullable;
  * <p>
  * 调用顺序（每次传输）：
  * <ol>
- *   <li>source 侧：{@link #hasItems(Block)} → {@link #peekExtract(Block, int)}</li>
+ *   <li>source 侧：{@link #hasItems(Block)} → {@link #peekExtractMatching(Block, int, ItemStack)}
+ *       （若目的地声明了 {@link #requestedItem}，则使用过滤提取；否则 {@link #peekExtract(Block, int)}）</li>
  *   <li>dest 侧：{@link #canReceive(Block)} → {@link #insert(Block, ItemStack)}</li>
  *   <li>存入成功后：{@link #commitExtract(Block, ItemStack)}</li>
  * </ol>
@@ -59,6 +60,40 @@ public interface ContainerAdapter {
      * @param extracted 与 {@link #peekExtract} 返回值数量一致的物品
      */
     void commitExtract(Block block, ItemStack extracted);
+
+    /**
+     * 预览与指定过滤器匹配的可提取物品，但不实际移除。
+     * <p>
+     * 当目的地通过 {@link #requestedItem} 声明了需求时，管道系统将调用此方法以针对性地提取物品。
+     * 默认实现：调用 {@link #peekExtract}，若返回物品与 {@code filter} 不匹配则返回 {@code null}。
+     * 实现类可覆盖此方法以扫描整个清单，找到第一个匹配的物品。
+     *
+     * @param block     源方块
+     * @param maxAmount 本次允许提取的最大数量
+     * @param filter    目的地期望的物品类型（通过 {@link ItemStack#isSimilar} 判断匹配）
+     * @return 将被提取的物品副本；若无匹配物品则返回 {@code null}
+     */
+    @Nullable
+    default ItemStack peekExtractMatching(Block block, int maxAmount, ItemStack filter) {
+        ItemStack item = peekExtract(block, maxAmount);
+        if (item == null) return null;
+        return item.isSimilar(filter) ? item : null;
+    }
+
+    /**
+     * 返回该容器当前期望接收的物品类型，供管道系统针对性地从源容器提取对应物品。
+     * <p>
+     * 默认返回 {@code null}，表示该容器不声明需求，管道将以默认方式（提取源中任意物品）传输。
+     * 若返回非 {@code null}，管道将仅从源容器中提取与返回值 {@link ItemStack#isSimilar} 匹配的物品。
+     * 当源容器中没有匹配物品时，本次传输跳过（不进入空容器休眠状态）。
+     *
+     * @param block 目标方块
+     * @return 期望接收的物品（数量字段仅作参考）；不声明需求时返回 {@code null}
+     */
+    @Nullable
+    default ItemStack requestedItem(Block block) {
+        return null;
+    }
 
     /**
      * 快速判断该方块当前是否能接受物品。
