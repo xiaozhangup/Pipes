@@ -1,6 +1,13 @@
-package anon.def9a2a4.pipes;
+package anon.def9a2a4.pipes.listener;
 
+import anon.def9a2a4.pipes.BehaviorType;
+import anon.def9a2a4.pipes.PipeManager;
+import anon.def9a2a4.pipes.PipeManager.PipeData;
+import anon.def9a2a4.pipes.PipeVariant;
+import anon.def9a2a4.pipes.PipesPlugin;
+import com.destroystokyo.paper.event.block.BlockDestroyEvent;
 import org.bukkit.Bukkit;
+import org.bukkit.Location;
 import org.bukkit.Material;
 import org.bukkit.World;
 import org.bukkit.block.Block;
@@ -14,9 +21,6 @@ import org.bukkit.event.block.*;
 import org.bukkit.event.entity.EntityExplodeEvent;
 import org.bukkit.event.world.ChunkLoadEvent;
 import org.bukkit.event.world.ChunkUnloadEvent;
-import org.bukkit.Location;
-import anon.def9a2a4.pipes.PipeManager.PipeData;
-import com.destroystokyo.paper.event.block.BlockDestroyEvent;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.SkullMeta;
 import org.bukkit.util.Vector;

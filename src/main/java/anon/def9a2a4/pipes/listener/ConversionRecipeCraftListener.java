@@ -1,5 +1,7 @@
-package anon.def9a2a4.pipes;
+package anon.def9a2a4.pipes.listener;
 
+import anon.def9a2a4.pipes.PipesPlugin;
+import anon.def9a2a4.pipes.RecipeManager;
 import org.bukkit.Keyed;
 import org.bukkit.Material;
 import org.bukkit.NamespacedKey;

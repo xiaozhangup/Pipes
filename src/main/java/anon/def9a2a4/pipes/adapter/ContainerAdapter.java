@@ -1,5 +1,6 @@
-package anon.def9a2a4.pipes;
+package anon.def9a2a4.pipes.adapter;
 
+import anon.def9a2a4.pipes.ContainerAdapterRegistry;
 import org.bukkit.block.Block;
 import org.bukkit.inventory.ItemStack;
 import org.jetbrains.annotations.Nullable;

@@ -1,5 +1,7 @@
 package anon.def9a2a4.pipes;
 
+import anon.def9a2a4.pipes.adapter.ContainerAdapter;
+import anon.def9a2a4.pipes.config.DisplayConfig;
 import org.bukkit.*;
 import org.bukkit.block.Block;
 import org.bukkit.block.BlockFace;
@@ -16,17 +18,7 @@ import org.bukkit.util.Vector;
 import org.joml.AxisAngle4f;
 import org.joml.Vector3f;
 
-import anon.def9a2a4.pipes.config.DisplayConfig;
-
-import java.util.ArrayList;
-import java.util.Collection;
-import java.util.List;
-import java.util.Random;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.Map;
-import java.util.Set;
-import java.util.UUID;
+import java.util.*;
 
 public class PipeManager {
 

@@ -1,31 +1,30 @@
 package anon.def9a2a4.pipes;
 
+import anon.def9a2a4.pipes.config.DisplayConfig;
+import anon.def9a2a4.pipes.config.PipeConfig;
+import anon.def9a2a4.pipes.listener.CauldronConversionListener;
+import anon.def9a2a4.pipes.listener.OxidationListener;
+import anon.def9a2a4.pipes.listener.PipeListener;
 import com.destroystokyo.paper.profile.PlayerProfile;
 import com.destroystokyo.paper.profile.ProfileProperty;
-import kotlin.jvm.functions.Function1;
 import me.xiaozhangup.slimecargo.utils.FlexibleItem;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
 import net.kyori.adventure.text.format.TextDecoration;
 import org.bukkit.Bukkit;
 import org.bukkit.Material;
+import org.bukkit.World;
 import org.bukkit.block.BlockFace;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandSender;
+import org.bukkit.configuration.ConfigurationSection;
+import org.bukkit.configuration.file.FileConfiguration;
+import org.bukkit.configuration.file.YamlConfiguration;
+import org.bukkit.entity.Player;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.SkullMeta;
 import org.bukkit.persistence.PersistentDataType;
 import org.bukkit.plugin.java.JavaPlugin;
-
-import org.bukkit.World;
-import org.bukkit.configuration.ConfigurationSection;
-import org.bukkit.configuration.file.FileConfiguration;
-import org.bukkit.configuration.file.YamlConfiguration;
-
-import anon.def9a2a4.pipes.adapter.BrewingStandContainerAdapter;
-import anon.def9a2a4.pipes.adapter.FurnaceContainerAdapter;
-import anon.def9a2a4.pipes.config.DisplayConfig;
-import anon.def9a2a4.pipes.config.PipeConfig;
 
 import java.io.File;
 import java.io.InputStream;
@@ -33,8 +32,6 @@ import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
 import java.util.stream.Stream;
-
-import org.bukkit.entity.Player;
 
 public class PipesPlugin extends JavaPlugin {
 
@@ -104,7 +101,6 @@ public class PipesPlugin extends JavaPlugin {
             manager.shutdown();
         }
         pipeManager.clear();
-        ContainerAdapterRegistry.clear();
         instance = null;
         getLogger().info("Pipes disabled!");
     }

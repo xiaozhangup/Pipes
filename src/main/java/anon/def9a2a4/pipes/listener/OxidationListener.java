@@ -1,5 +1,9 @@
-package anon.def9a2a4.pipes;
+package anon.def9a2a4.pipes.listener;
 
+import anon.def9a2a4.pipes.PipeManager;
+import anon.def9a2a4.pipes.PipeManager.PipeData;
+import anon.def9a2a4.pipes.PipeVariant;
+import anon.def9a2a4.pipes.PipesPlugin;
 import org.bukkit.*;
 import org.bukkit.block.Block;
 import org.bukkit.configuration.ConfigurationSection;
@@ -13,9 +17,11 @@ import org.bukkit.inventory.EquipmentSlot;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.scheduler.BukkitRunnable;
 import org.bukkit.scheduler.BukkitTask;
-import anon.def9a2a4.pipes.PipeManager.PipeData;
 
-import java.util.*;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.Random;
+import java.util.WeakHashMap;
 
 /**
  * 处理铜管的随机氧化、涂蜡（蜜脾右键）和打磨（斧头右键）机制，

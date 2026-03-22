@@ -1,5 +1,7 @@
-package anon.def9a2a4.pipes;
+package anon.def9a2a4.pipes.listener;
 
+import anon.def9a2a4.pipes.PipeVariant;
+import anon.def9a2a4.pipes.PipesPlugin;
 import org.bukkit.Material;
 import org.bukkit.Particle;
 import org.bukkit.Sound;

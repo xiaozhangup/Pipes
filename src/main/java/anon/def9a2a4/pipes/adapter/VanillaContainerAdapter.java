@@ -1,5 +1,6 @@
-package anon.def9a2a4.pipes;
+package anon.def9a2a4.pipes.adapter;
 
+import anon.def9a2a4.pipes.ContainerAdapterRegistry;
 import org.bukkit.block.Block;
 import org.bukkit.block.Container;
 import org.bukkit.inventory.Inventory;
@@ -15,7 +16,7 @@ import java.util.HashMap;
  * （箱子、漏斗、熔炉、潜影箱、发射器等）。
  * 由 {@link ContainerAdapterRegistry} 作为 fallback 自动使用，无需手动注册。
  */
-final class VanillaContainerAdapter implements ContainerAdapter {
+public final class VanillaContainerAdapter implements ContainerAdapter {
 
     @Override
     public boolean canHandle(Block block) {

@@ -1,5 +1,7 @@
 package anon.def9a2a4.pipes;
 
+import anon.def9a2a4.pipes.adapter.ContainerAdapter;
+import anon.def9a2a4.pipes.adapter.VanillaContainerAdapter;
 import org.bukkit.block.Block;
 
 import java.util.ArrayList;
@@ -45,13 +47,6 @@ public final class ContainerAdapterRegistry {
      */
     public static void unregister(ContainerAdapter adapter) {
         adapters.remove(adapter);
-    }
-
-    /**
-     * 注销所有自定义适配器（建议在插件 {@code onDisable} 时调用）。
-     */
-    public static void clear() {
-        adapters.clear();
     }
 
     /**
