@@ -568,10 +568,10 @@ public class PipesPlugin extends JavaPlugin {
         // Horizontal directions all use the same texture
         if (facing == BlockFace.NORTH || facing == BlockFace.SOUTH ||
             facing == BlockFace.EAST || facing == BlockFace.WEST) {
-            return heads.get(BlockFace.NORTH).clone();
+            return heads.get(BlockFace.NORTH);
         }
         ItemStack item = heads.get(facing);
-        return item != null ? item.clone() : heads.get(BlockFace.NORTH).clone();
+        return item != null ? item : heads.get(BlockFace.NORTH);
     }
 
     public ItemStack getDisplayItem(PipeVariant variant, BlockFace facing) {
@@ -579,18 +579,18 @@ public class PipesPlugin extends JavaPlugin {
         if (displays == null) return null;
 
         if (variant.getBehaviorType() == BehaviorType.CORNER) {
-            return displays.get(BlockFace.NORTH).clone();
+            return displays.get(BlockFace.NORTH);
         }
         // Regular pipes: use direction-specific texture
         if (facing == BlockFace.UP) {
             ItemStack item = displays.get(BlockFace.UP);
-            return item != null ? item.clone() : displays.get(BlockFace.NORTH).clone();
+            return item != null ? item : displays.get(BlockFace.NORTH);
         } else if (facing == BlockFace.DOWN) {
             ItemStack item = displays.get(BlockFace.DOWN);
-            return item != null ? item.clone() : displays.get(BlockFace.NORTH).clone();
+            return item != null ? item : displays.get(BlockFace.NORTH);
         }
         // Horizontal directions all use the same texture
-        return displays.get(BlockFace.NORTH).clone();
+        return displays.get(BlockFace.NORTH);
     }
 
     /**
@@ -602,10 +602,10 @@ public class PipesPlugin extends JavaPlugin {
 
         if (facing == BlockFace.DOWN) {
             ItemStack item = displays.get(BlockFace.DOWN);
-            return item != null ? item.clone() : displays.get(BlockFace.NORTH).clone();
+            return item != null ? item : displays.get(BlockFace.NORTH);
         }
         // Horizontal directions all use the same texture
-        return displays.get(BlockFace.NORTH).clone();
+        return displays.get(BlockFace.NORTH);
     }
 
     /**
