@@ -22,6 +22,8 @@ import org.bukkit.configuration.ConfigurationSection;
 import org.bukkit.configuration.file.FileConfiguration;
 import org.bukkit.configuration.file.YamlConfiguration;
 
+import anon.def9a2a4.pipes.adapter.BrewingStandContainerAdapter;
+import anon.def9a2a4.pipes.adapter.FurnaceContainerAdapter;
 import anon.def9a2a4.pipes.config.DisplayConfig;
 import anon.def9a2a4.pipes.config.PipeConfig;
 
@@ -71,6 +73,9 @@ public class PipesPlugin extends JavaPlugin {
 
         loadItems();
 
+        ContainerAdapterRegistry.register(new FurnaceContainerAdapter());
+        ContainerAdapterRegistry.register(new BrewingStandContainerAdapter());
+
 //        recipeManager = new RecipeManager(this);
 //        recipeManager.registerRecipes();
 
@@ -99,6 +104,7 @@ public class PipesPlugin extends JavaPlugin {
             manager.shutdown();
         }
         pipeManager.clear();
+        ContainerAdapterRegistry.clear();
         instance = null;
         getLogger().info("Pipes disabled!");
     }
