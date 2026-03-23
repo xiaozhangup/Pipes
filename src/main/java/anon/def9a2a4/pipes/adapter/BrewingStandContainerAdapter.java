@@ -49,15 +49,22 @@ public class BrewingStandContainerAdapter implements ContainerAdapter {
         if (!(block.getState() instanceof BrewingStand stand)) return null;
         if (stand.getBrewingTime() > 0) return null;
         BrewerInventory inv = stand.getInventory();
+        ItemStack template = null;
+        int collected = 0;
         for (int i = 0; i < BOTTLE_SLOTS; i++) {
             ItemStack item = inv.getItem(i);
-            if (item != null && !item.getType().isAir()) {
-                ItemStack copy = item.clone();
-                copy.setAmount(Math.min(maxAmount, item.getAmount()));
-                return copy;
+            if (item == null || item.getType().isAir()) continue;
+            if (template == null) {
+                template = item.clone();
+                collected = Math.min(maxAmount, item.getAmount());
+            } else if (item.isSimilar(template)) {
+                collected = Math.min(maxAmount, collected + item.getAmount());
             }
+            if (collected >= maxAmount) break;
         }
-        return null;
+        if (template == null) return null;
+        template.setAmount(collected);
+        return template;
     }
 
     @Override
