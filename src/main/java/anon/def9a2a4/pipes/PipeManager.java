@@ -935,10 +935,20 @@ public class PipeManager {
             ContainerAdapter destAdapter = ContainerAdapterRegistry.findAdapter(destBlock).orElse(null);
             if (destAdapter != null) {
                 ItemStack leftover = destAdapter.insert(destBlock, toTransfer);
-                if (leftover == null || leftover.getAmount() <= 0) {
+                int leftoverAmount = (leftover == null) ? 0 : Math.max(0, leftover.getAmount());
+                int insertedAmount = toTransfer.getAmount() - leftoverAmount;
+                if (leftoverAmount <= 0) {
+                    // 全部插入成功
                     transferred = true;
+                } else if (insertedAmount > 0) {
+                    // 部分插入：提交实际插入数量的提取，然后进入休眠
+                    ItemStack partialExtract = toTransfer.clone();
+                    partialExtract.setAmount(insertedAmount);
+                    sourceAdapter.commitExtract(sourceBlock, partialExtract);
+                    sleepPipe(pipeLocation, plugin.getPipeConfig().getDestFullSleepMs());
+                    return false;
                 } else {
-                    // 主目标已满，先尝试转角节点备用输出，再尝试末端管道周围其他容器
+                    // 完全无法插入，尝试备用输出
                     transferred = tryCornerJunctionAlternatives(path, toTransfer)
                                || tryAlternativeDestination(path.lastPipeLocation(), path.destination(), toTransfer);
                     if (!transferred) {
