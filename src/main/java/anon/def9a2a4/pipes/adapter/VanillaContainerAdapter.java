@@ -85,8 +85,6 @@ public final class VanillaContainerAdapter implements ContainerAdapter {
 
     @Override
     public boolean canReceive(Block block) {
-        // 与原版行为一致：只要是 Container 就视为有效目的地，
-        // 实际空间检测在 insert() 时通过 leftover 判断
         return block.getState() instanceof Container;
     }
 

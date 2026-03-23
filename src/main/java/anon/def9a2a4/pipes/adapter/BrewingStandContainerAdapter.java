@@ -2,6 +2,7 @@ package anon.def9a2a4.pipes.adapter;
 
 import org.bukkit.block.Block;
 import org.bukkit.block.BrewingStand;
+import org.bukkit.block.Furnace;
 import org.bukkit.inventory.BrewerInventory;
 import org.bukkit.inventory.ItemStack;
 import org.jetbrains.annotations.Nullable;
@@ -101,16 +102,7 @@ public class BrewingStandContainerAdapter implements ContainerAdapter {
 
     @Override
     public boolean canReceive(Block block) {
-        if (!(block.getState() instanceof BrewingStand stand)) return false;
-        BrewerInventory inv = stand.getInventory();
-        for (int i = 0; i < inv.getSize(); i++) {
-            ItemStack existing = inv.getItem(i);
-            if (existing == null || existing.getType().isAir()
-                    || existing.getAmount() < existing.getMaxStackSize()) {
-                return true;
-            }
-        }
-        return false;
+        return block.getState() instanceof BrewingStand;
     }
 
     @Override

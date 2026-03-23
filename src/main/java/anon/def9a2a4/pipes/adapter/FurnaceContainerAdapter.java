@@ -77,9 +77,6 @@ public class FurnaceContainerAdapter implements ContainerAdapter {
 
     @Override
     public boolean canReceive(Block block) {
-        // 与原版行为一致：只要是熔炉类容器就视为有效目的地；
-        // 实际空间检测在 insert() 时通过 leftover 判断，以避免因容器暂时已满
-        // 导致路径被重建为 null 目标从而将物品作为掉落物输出。
         return block.getState() instanceof Furnace;
     }
 
