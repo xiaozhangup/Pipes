@@ -941,11 +941,10 @@ public class PipeManager {
                     // 全部插入成功
                     transferred = true;
                 } else if (insertedAmount > 0) {
-                    // 部分插入：提交实际插入数量的提取，然后进入休眠
+                    // 部分插入：仅提交实际插入数量，不进入休眠
                     ItemStack partialExtract = toTransfer.clone();
                     partialExtract.setAmount(insertedAmount);
                     sourceAdapter.commitExtract(sourceBlock, partialExtract);
-                    sleepPipe(pipeLocation, plugin.getPipeConfig().getDestFullSleepMs());
                     return false;
                 } else {
                     // 完全无法插入，尝试备用输出
