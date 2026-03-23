@@ -37,28 +37,39 @@ public final class VanillaContainerAdapter implements ContainerAdapter {
     public @Nullable ItemStack peekExtract(Block block, int maxAmount) {
         if (!(block.getState() instanceof Container container)) return null;
         Inventory inv = container.getInventory();
+        ItemStack template = null;
+        int collected = 0;
         for (ItemStack item : inv.getContents()) {
-            if (item != null && !item.getType().isAir()) {
-                ItemStack result = item.clone();
-                result.setAmount(Math.min(maxAmount, item.getAmount()));
-                return result;
+            if (item == null || item.getType().isAir()) continue;
+            if (template == null) {
+                template = item.clone();
+                collected = Math.min(maxAmount, item.getAmount());
+            } else if (item.isSimilar(template)) {
+                collected = Math.min(maxAmount, collected + item.getAmount());
             }
+            if (collected >= maxAmount) break;
         }
-        return null;
+        if (template == null) return null;
+        template.setAmount(collected);
+        return template;
     }
 
     @Override
     public @Nullable ItemStack peekExtractMatching(Block block, int maxAmount, ItemStack filter) {
         if (!(block.getState() instanceof Container container)) return null;
         Inventory inv = container.getInventory();
+        int collected = 0;
         for (ItemStack item : inv.getContents()) {
-            if (item != null && !item.getType().isAir() && item.isSimilar(filter)) {
-                ItemStack result = item.clone();
-                result.setAmount(Math.min(maxAmount, item.getAmount()));
-                return result;
+            if (item == null || item.getType().isAir()) continue;
+            if (item.isSimilar(filter)) {
+                collected = Math.min(maxAmount, collected + item.getAmount());
+                if (collected >= maxAmount) break;
             }
         }
-        return null;
+        if (collected == 0) return null;
+        ItemStack result = filter.clone();
+        result.setAmount(collected);
+        return result;
     }
 
     @Override
