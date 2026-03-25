@@ -84,7 +84,7 @@ public class PipesPlugin extends JavaPlugin {
         getServer().getPluginManager().registerEvents(cauldronConversionListener, this);
         getServer().getPluginManager().registerEvents(oxidationListener, this);
 //        getServer().getPluginManager().registerEvents(conversionRecipeCraftListener, this);
-        FlexibleItem.INSTANCE.getFlexibleItem().put("pipes", s -> getPipeItem(variantRegistry.getVariant(s)));
+        FlexibleItem.INSTANCE.registerHandler(new PipeItemHandler());
 
         getLogger().info("Pipes enabled!");
     }
