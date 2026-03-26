@@ -22,6 +22,8 @@ import java.util.*;
 
 public class PipeManager {
 
+    private static final int MAX_FALLBACK_DEPTH = 24;
+
     private record CachedPath(Location destination, Location lastPipeLocation,
                                List<Location> pipeChain, int minItemsPerTransfer) {}
 
@@ -860,15 +862,12 @@ public class PipeManager {
         int transferAmount = path.minItemsPerTransfer();
         int maxToExtract = Math.min(startingMax, transferAmount);
 
-        // 检查目的地是否声明了所需物品，若声明则针对性地从源容器提取
-        ItemStack requested = null;
-        if (path.destination() != null) {
-            Block destBlockCheck = path.destination().getBlock();
-            ContainerAdapter destAdapterCheck = ContainerAdapterRegistry.findAdapter(destBlockCheck).orElse(null);
-            if (destAdapterCheck != null) {
-                requested = destAdapterCheck.requestedItem(destBlockCheck);
-            }
-        }
+        // 检查目的地是否声明了所需物品，若声明则针对性地从源容器提取。
+        // 同时缓存适配器引用，避免后续对同一方块的重复查找。
+        Block destBlock = path.destination() != null ? path.destination().getBlock() : null;
+        ContainerAdapter destAdapter = destBlock != null
+                ? ContainerAdapterRegistry.findAdapter(destBlock).orElse(null) : null;
+        ItemStack requested = destAdapter != null ? destAdapter.requestedItem(destBlock) : null;
 
         ItemStack toTransfer;
         if (requested != null) {
@@ -877,6 +876,26 @@ public class PipeManager {
                 // 源容器中没有目的地所需的物品；若源容器已完全为空则休眠，否则跳过本次传输
                 if (!sourceAdapter.hasItems(sourceBlock)) {
                     sleepPipe(pipeLocation, plugin.getPipeConfig().getSourceEmptySleepMs());
+                    return false;
+                }
+                // 源容器有物品但类型不符合缓存目的地的需求（如石桶已存放不同物品）。
+                // 尝试提取实际物品并路由到备用容器，避免物品被永久卡住。
+                ItemStack anyItem = sourceAdapter.peekExtract(sourceBlock, maxToExtract);
+                if (anyItem != null) {
+                    ItemStack remaining = tryCornerJunctionAlternatives(path, anyItem);
+                    if (remaining != null && remaining.getAmount() > 0) {
+                        remaining = tryAlternativeDestination(path.lastPipeLocation(), path.destination(), remaining);
+                    }
+
+                    int remainingAmount = (remaining == null) ? 0 : Math.max(0, remaining.getAmount());
+                    int insertedAmount = anyItem.getAmount() - remainingAmount;
+                    if (insertedAmount > 0) {
+                        ItemStack extracted = anyItem.clone();
+                        extracted.setAmount(insertedAmount);
+                        sourceAdapter.commitExtract(sourceBlock, extracted);
+                        // 成功路由了不匹配类型的物品：驱逐缓存，让下次传输重新寻路找到正确目的地
+                        evictCacheEntry(normalizeLocation(pipeLocation));
+                    }
                 }
                 return false;
             }
@@ -892,10 +911,13 @@ public class PipeManager {
         boolean transferred = false;
         if (path.destination() == null) {
             // 无容器目的地时，先尝试转角节点的备用输出
-            transferred = tryCornerJunctionAlternatives(path, toTransfer);
+            ItemStack remaining = tryCornerJunctionAlternatives(path, toTransfer);
+            if (remaining != null && remaining.getAmount() > 0) {
+                remaining = tryAlternativeDestination(path.lastPipeLocation(), null, remaining);
+            }
 
-            if (!transferred) {
-                // 仍无法传输，掉落在链条末端
+            if (remaining != null && remaining.getAmount() > 0) {
+                // 仍有剩余无法传输，掉落在链条末端
                 Location lastPipeLoc = path.lastPipeLocation();
                 PipeData lastPipeData = getPipeData(lastPipeLoc);
                 BlockFace finalFacing = lastPipeData != null ? lastPipeData.facing() : facing;
@@ -915,9 +937,9 @@ public class PipeManager {
                 // Spawn item with velocity set during spawn to avoid dropItem's default velocity
                 double baseSpeed = (finalFacing == BlockFace.DOWN) ? 0 : 0.25;
                 double randomSpread = 0.05;
-                final ItemStack finalTransfer = toTransfer;
+                final ItemStack finalTransfer = remaining;
 
-                Item item = lastPipeLoc.getWorld().spawn(dropLoc, Item.class, spawnedItem -> {
+                lastPipeLoc.getWorld().spawn(dropLoc, Item.class, spawnedItem -> {
                     spawnedItem.setItemStack(finalTransfer);
 
                     Vector velocity = new Vector(
@@ -927,12 +949,10 @@ public class PipeManager {
                     );
                     spawnedItem.setVelocity(velocity);
                 });
-
-                transferred = true;
             }
+            transferred = true;
         } else {
-            Block destBlock = path.destination().getBlock();
-            ContainerAdapter destAdapter = ContainerAdapterRegistry.findAdapter(destBlock).orElse(null);
+            // destBlock and destAdapter are already resolved above when building the 'requested' check
             if (destAdapter != null) {
                 ItemStack leftover = destAdapter.insert(destBlock, toTransfer);
                 int leftoverAmount = (leftover == null) ? 0 : Math.max(0, leftover.getAmount());
@@ -948,9 +968,21 @@ public class PipeManager {
                     return false;
                 } else {
                     // 完全无法插入，尝试备用输出
-                    transferred = tryCornerJunctionAlternatives(path, toTransfer)
-                               || tryAlternativeDestination(path.lastPipeLocation(), path.destination(), toTransfer);
-                    if (!transferred) {
+                    ItemStack remaining = tryCornerJunctionAlternatives(path, toTransfer);
+                    if (remaining != null && remaining.getAmount() > 0) {
+                        remaining = tryAlternativeDestination(path.lastPipeLocation(), path.destination(), remaining);
+                    }
+
+                    int remainingAmount = (remaining == null) ? 0 : Math.max(0, remaining.getAmount());
+                    int altInsertedAmount = toTransfer.getAmount() - remainingAmount;
+                    if (remainingAmount <= 0) {
+                        transferred = true;
+                    } else if (altInsertedAmount > 0) {
+                        ItemStack partialExtract = toTransfer.clone();
+                        partialExtract.setAmount(altInsertedAmount);
+                        sourceAdapter.commitExtract(sourceBlock, partialExtract);
+                        return false;
+                    } else {
                         // 所有出口均已满，进入休眠：接下来若干毫秒内不再检测此管道
                         sleepPipe(pipeLocation, plugin.getPipeConfig().getDestFullSleepMs());
                     }
@@ -970,11 +1002,25 @@ public class PipeManager {
      *
      * @param path 当前路径（含完整管道链）
      * @param item 待传输物品
-     * @return 是否成功插入某个备用目的地
+     * @return 剩余未插入的物品；若全部插入则返回 {@code null}
      */
-    private boolean tryCornerJunctionAlternatives(CachedPath path, ItemStack item) {
+    private ItemStack tryCornerJunctionAlternatives(CachedPath path, ItemStack item) {
+        return tryCornerJunctionAlternatives(path, item, new HashSet<>(), 0);
+    }
+
+    private ItemStack tryCornerJunctionAlternatives(CachedPath path, ItemStack item,
+                                                    Set<Location> visitedTails, int depth) {
+        if (item == null || item.getAmount() <= 0) return null;
+        if (depth > MAX_FALLBACK_DEPTH) return item;
+
+        Location currentTail = normalizeLocation(path.lastPipeLocation());
+        if (!visitedTails.add(currentTail)) return item;
+
+        ItemStack remaining = item.clone();
         List<Location> chain = path.pipeChain();
         for (int i = 1; i < chain.size(); i++) {
+            if (remaining.getAmount() <= 0) return null;
+
             Location loc = chain.get(i);
             PipeData pipeData = getPipeData(loc);
             if (pipeData == null || pipeData.variant().getBehaviorType() != BehaviorType.CORNER) continue;
@@ -1003,8 +1049,9 @@ public class PipeManager {
                 // 先尝试直接相邻容器
                 ContainerAdapter adjAdapter = ContainerAdapterRegistry.findAdapter(adjacent).orElse(null);
                 if (adjAdapter != null && adjAdapter.canReceive(adjacent)) {
-                    ItemStack leftover = adjAdapter.insert(adjacent, item);
-                    if (leftover == null || leftover.getAmount() <= 0) return true;
+                    ItemStack leftover = adjAdapter.insert(adjacent, remaining);
+                    if (leftover == null || leftover.getAmount() <= 0) return null;
+                    remaining = leftover;
                     continue;
                 }
 
@@ -1017,39 +1064,67 @@ public class PipeManager {
                 Set<Location> visited = new HashSet<>(baseVisited);
                 visited.add(loc); // 标记转角自身，防止重入
                 CachedPath altPath = findDestination(adjLoc, adjPipeData.facing(), visited, new ArrayList<>(), Integer.MAX_VALUE);
-                if (altPath.destination() == null) continue;
 
-                Block destBlock = altPath.destination().getBlock();
-                ContainerAdapter destAdapter = ContainerAdapterRegistry.findAdapter(destBlock).orElse(null);
-                if (destAdapter == null) continue;
-                ItemStack leftover = destAdapter.insert(destBlock, item);
-                if (leftover == null || leftover.getAmount() <= 0) return true;
+                ItemStack branchRemaining = remaining;
+                if (altPath.destination() != null) {
+                    Block destBlock = altPath.destination().getBlock();
+                    ContainerAdapter destAdapter = ContainerAdapterRegistry.findAdapter(destBlock).orElse(null);
+                    if (destAdapter != null && destAdapter.canReceive(destBlock)) {
+                        ItemStack leftover = destAdapter.insert(destBlock, branchRemaining);
+                        branchRemaining = (leftover == null || leftover.getAmount() <= 0) ? null : leftover;
+                    }
+                }
+
+                if (branchRemaining != null && branchRemaining.getAmount() > 0) {
+                    branchRemaining = tryCornerJunctionAlternatives(altPath, branchRemaining, visitedTails, depth + 1);
+                }
+                if (branchRemaining != null && branchRemaining.getAmount() > 0) {
+                    branchRemaining = tryAlternativeDestination(
+                            altPath.lastPipeLocation(), altPath.destination(), branchRemaining, visitedTails, depth + 1);
+                }
+
+                if (branchRemaining == null || branchRemaining.getAmount() <= 0) return null;
+                remaining = branchRemaining;
             }
         }
-        return false;
+        return remaining;
     }
 
     /**
-     * 优先级分流：主目标满时，尝试链条末端管道周围其他相邻容器。
+     * 优先级分流：主目标不可用时，尝试链条末端周围的相邻容器或相邻管道分支。
      * <p>
      * 按 NORTH → SOUTH → EAST → WEST → UP → DOWN 固定顺序依次尝试，
-     * 找到第一个能接收的容器即插入（优先级由方向顺序决定）。
+     * 若相邻方块是管道，则沿该分支继续寻路到可接收容器。
      *
      * @param lastPipeLoc 链条末端管道的位置
      * @param primaryDest 主目标位置（已满，跳过）
      * @param item        待传输的物品
-     * @return 是否成功插入到某个备用容器
+     * @return 剩余未插入的物品；若全部插入则返回 {@code null}
      */
-    private boolean tryAlternativeDestination(Location lastPipeLoc, Location primaryDest, ItemStack item) {
+    private ItemStack tryAlternativeDestination(Location lastPipeLoc, Location primaryDest, ItemStack item) {
+        return tryAlternativeDestination(lastPipeLoc, primaryDest, item, new HashSet<>(), 0);
+    }
+
+    private ItemStack tryAlternativeDestination(Location lastPipeLoc, Location primaryDest, ItemStack item,
+                                                Set<Location> visitedTails, int depth) {
+        if (item == null || item.getAmount() <= 0) return null;
+        if (depth > MAX_FALLBACK_DEPTH) return item;
+
+        Location currentTail = normalizeLocation(lastPipeLoc);
+        if (!visitedTails.add(currentTail)) return item;
+
         Block lastPipeBlock = lastPipeLoc.getBlock();
         PipeData lastPipeData = getPipeData(lastPipeLoc);
         // 链条来向（反方向），不向源头插入
         BlockFace backFace = lastPipeData != null ? lastPipeData.facing().getOppositeFace() : null;
 
-        Location normalizedPrimary = normalizeLocation(primaryDest);
+        ItemStack remaining = item.clone();
+        Location normalizedPrimary = primaryDest == null ? null : normalizeLocation(primaryDest);
         for (BlockFace face : new BlockFace[]{
                 BlockFace.NORTH, BlockFace.SOUTH, BlockFace.EAST,
                 BlockFace.WEST, BlockFace.UP, BlockFace.DOWN}) {
+            if (remaining.getAmount() <= 0) return null;
+
             // 跳过已尝试的主目标方向
             if (face == backFace) continue;
 
@@ -1057,19 +1132,52 @@ public class PipeManager {
             Location adjLoc = normalizeLocation(adjacent.getLocation());
 
             // 跳过主目标（已满）
-            if (adjLoc.equals(normalizedPrimary)) continue;
-            // 跳过管道方块（不递归进入链条）
-            if (getPipeData(adjLoc) != null) continue;
-
+            if (Objects.equals(adjLoc, normalizedPrimary)) continue;
+            // 先尝试直接相邻容器
             ContainerAdapter adapter = ContainerAdapterRegistry.findAdapter(adjacent).orElse(null);
-            if (adapter == null || !adapter.canReceive(adjacent)) continue;
-
-            ItemStack leftover = adapter.insert(adjacent, item);
-            if (leftover == null || leftover.getAmount() <= 0) {
-                return true;
+            if (adapter != null && adapter.canReceive(adjacent)) {
+                ItemStack leftover = adapter.insert(adjacent, remaining);
+                if (leftover == null || leftover.getAmount() <= 0) return null;
+                remaining = leftover;
+                continue;
             }
+
+            // 再尝试相邻管道分支（多层并联）
+            PipeData adjPipeData = getPipeData(adjLoc);
+            if (adjPipeData == null) continue;
+            // 相邻管道若朝向指回当前末端（head-to-head）则不可用
+            if (adjPipeData.facing() == face.getOppositeFace()) continue;
+
+            Set<Location> visited = new HashSet<>();
+            visited.add(normalizeLocation(lastPipeLoc));
+            CachedPath altPath = findDestination(adjLoc, adjPipeData.facing(), visited, new ArrayList<>(), Integer.MAX_VALUE);
+
+            ItemStack branchRemaining = remaining;
+            if (altPath.destination() != null) {
+                Location altDestLoc = normalizeLocation(altPath.destination());
+                if (!Objects.equals(altDestLoc, normalizedPrimary)) {
+                    Block altDestBlock = altPath.destination().getBlock();
+                    ContainerAdapter altDestAdapter = ContainerAdapterRegistry.findAdapter(altDestBlock).orElse(null);
+                    if (altDestAdapter != null && altDestAdapter.canReceive(altDestBlock)) {
+                        ItemStack leftover = altDestAdapter.insert(altDestBlock, branchRemaining);
+                        branchRemaining = (leftover == null || leftover.getAmount() <= 0) ? null : leftover;
+                    }
+                }
+            }
+
+            // 分支路径自身也可能包含转角并联输出，继续沿分支做一次并联分流。
+            if (branchRemaining != null && branchRemaining.getAmount() > 0) {
+                branchRemaining = tryCornerJunctionAlternatives(altPath, branchRemaining, visitedTails, depth + 1);
+            }
+            if (branchRemaining != null && branchRemaining.getAmount() > 0) {
+                branchRemaining = tryAlternativeDestination(
+                        altPath.lastPipeLocation(), altPath.destination(), branchRemaining, visitedTails, depth + 1);
+            }
+
+            if (branchRemaining == null || branchRemaining.getAmount() <= 0) return null;
+            remaining = branchRemaining;
         }
-        return false;
+        return remaining;
     }
 
     private CachedPath getOrBuildPath(Location pipeLocation, BlockFace facing) {
@@ -1208,6 +1316,7 @@ public class PipeManager {
         stopTasks();
         pipes.clear();
         lastTransferTime.clear();
+        sleepUntil.clear();
         pathCache.clear();
         dirtyPaths.clear();
         nullDestRecheckUntil.clear();

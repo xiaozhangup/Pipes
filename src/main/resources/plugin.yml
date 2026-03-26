@@ -7,6 +7,7 @@ description: Item pipes for transferring items between containers
 
 depend:
   - CarbKotlin
+  - SlimeCargoNext
 
 commands:
   pipes:
