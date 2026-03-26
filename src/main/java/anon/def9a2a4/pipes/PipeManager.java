@@ -877,6 +877,17 @@ public class PipeManager {
                 // 源容器中没有目的地所需的物品；若源容器已完全为空则休眠，否则跳过本次传输
                 if (!sourceAdapter.hasItems(sourceBlock)) {
                     sleepPipe(pipeLocation, plugin.getPipeConfig().getSourceEmptySleepMs());
+                    return false;
+                }
+                // 源容器有物品但类型不符合缓存目的地的需求（如石桶已存放不同物品）。
+                // 尝试提取实际物品并路由到备用容器，避免物品被永久卡住。
+                ItemStack anyItem = sourceAdapter.peekExtract(sourceBlock, maxToExtract);
+                if (anyItem != null) {
+                    boolean altTransferred = tryCornerJunctionAlternatives(path, anyItem)
+                            || tryAlternativeDestination(path.lastPipeLocation(), path.destination(), anyItem);
+                    if (altTransferred) {
+                        sourceAdapter.commitExtract(sourceBlock, anyItem);
+                    }
                 }
                 return false;
             }
