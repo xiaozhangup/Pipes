@@ -862,15 +862,12 @@ public class PipeManager {
         int transferAmount = path.minItemsPerTransfer();
         int maxToExtract = Math.min(startingMax, transferAmount);
 
-        // 检查目的地是否声明了所需物品，若声明则针对性地从源容器提取
-        ItemStack requested = null;
-        if (path.destination() != null) {
-            Block destBlockCheck = path.destination().getBlock();
-            ContainerAdapter destAdapterCheck = ContainerAdapterRegistry.findAdapter(destBlockCheck).orElse(null);
-            if (destAdapterCheck != null) {
-                requested = destAdapterCheck.requestedItem(destBlockCheck);
-            }
-        }
+        // 检查目的地是否声明了所需物品，若声明则针对性地从源容器提取。
+        // 同时缓存适配器引用，避免后续对同一方块的重复查找。
+        Block destBlock = path.destination() != null ? path.destination().getBlock() : null;
+        ContainerAdapter destAdapter = destBlock != null
+                ? ContainerAdapterRegistry.findAdapter(destBlock).orElse(null) : null;
+        ItemStack requested = destAdapter != null ? destAdapter.requestedItem(destBlock) : null;
 
         ItemStack toTransfer;
         if (requested != null) {
@@ -896,6 +893,8 @@ public class PipeManager {
                         ItemStack extracted = anyItem.clone();
                         extracted.setAmount(insertedAmount);
                         sourceAdapter.commitExtract(sourceBlock, extracted);
+                        // 成功路由了不匹配类型的物品：驱逐缓存，让下次传输重新寻路找到正确目的地
+                        evictCacheEntry(normalizeLocation(pipeLocation));
                     }
                 }
                 return false;
@@ -953,8 +952,7 @@ public class PipeManager {
             }
             transferred = true;
         } else {
-            Block destBlock = path.destination().getBlock();
-            ContainerAdapter destAdapter = ContainerAdapterRegistry.findAdapter(destBlock).orElse(null);
+            // destBlock and destAdapter are already resolved above when building the 'requested' check
             if (destAdapter != null) {
                 ItemStack leftover = destAdapter.insert(destBlock, toTransfer);
                 int leftoverAmount = (leftover == null) ? 0 : Math.max(0, leftover.getAmount());
@@ -1318,6 +1316,7 @@ public class PipeManager {
         stopTasks();
         pipes.clear();
         lastTransferTime.clear();
+        sleepUntil.clear();
         pathCache.clear();
         dirtyPaths.clear();
         nullDestRecheckUntil.clear();
