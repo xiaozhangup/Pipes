@@ -57,20 +57,23 @@ public class FurnaceContainerAdapter implements ContainerAdapter {
 
     /**
      * 若熔炉原料格已有物品，则声明需要更多同类物品，以便管道针对性地从源容器提取；
-     * 若燃料格已有物品，则以原料格需求优先，原料格为空时再声明需要燃料格同类物品。
-     * 原料格为空时无法判断需要何种原料，返回 {@code null} 以使用默认传输行为。
+     * 仅当原料格已占用（且无法继续堆叠）时，才回退为声明燃料需求。
+     * 原料格为空时返回 {@code null}，避免错误地只请求燃料而阻塞新一轮熔炼输入。
      */
     @Override
     public @Nullable ItemStack requestedItem(Block block) {
         if (!(block.getState() instanceof Furnace furnace)) return null;
         FurnaceInventory inv = furnace.getInventory();
         ItemStack smelting = inv.getSmelting();
-        if (smelting != null && !smelting.getType().isAir() && smelting.getAmount() < smelting.getMaxStackSize()) {
-            return smelting.clone();
-        }
-        ItemStack fuel = inv.getFuel();
-        if (fuel != null && !fuel.getType().isAir() && fuel.getAmount() < fuel.getMaxStackSize()) {
-            return fuel.clone();
+        if (smelting != null && !smelting.getType().isAir()) {
+            if (smelting.getAmount() < smelting.getMaxStackSize()) {
+                return smelting.clone();
+            }
+
+            ItemStack fuel = inv.getFuel();
+            if (fuel != null && !fuel.getType().isAir() && fuel.getAmount() < fuel.getMaxStackSize()) {
+                return fuel.clone();
+            }
         }
         return null;
     }
@@ -85,21 +88,27 @@ public class FurnaceContainerAdapter implements ContainerAdapter {
         if (!(block.getState() instanceof Furnace furnace)) return item;
         FurnaceInventory inv = furnace.getInventory();
 
-        // 先尝试原料格（slot 0）
-        ItemStack smelting = inv.getSmelting();
-        if (smelting == null || smelting.getType().isAir()) {
-            inv.setSmelting(item.clone());
-            return null;
-        }
-        if (smelting.isSimilar(item)) {
-            item = tryFillSlotSimilar(inv, 0, smelting, item);
-            if (item == null || item.getAmount() <= 0) return null;
-        }
-
-        // 燃料格（slot 1）：仅在燃料格已有物品时才尝试补充
+        // 燃料格（slot 1）
         ItemStack fuel = inv.getFuel();
         if (fuel != null && !fuel.getType().isAir() && fuel.isSimilar(item)) {
+            int ori = item.getAmount(); // 有变化就返回
             item = tryFillSlotSimilar(inv, 1, fuel, item);
+            if (item == null || item.getAmount() <= 0) return null;
+            if (item.getAmount() != ori) {
+                return item;
+            }
+        }
+
+        // 原料格（slot 0）
+        ItemStack smelting = inv.getSmelting();
+        if (smelting == null || smelting.getType().isAir()) {
+            if (inv.canSmelt(item)) {
+                inv.setSmelting(item.clone());
+                return null;
+            }
+        }
+        if (smelting != null && !smelting.getType().isAir() && smelting.isSimilar(item)) {
+            item = tryFillSlotSimilar(inv, 0, smelting, item);
             if (item == null || item.getAmount() <= 0) return null;
         }
 
