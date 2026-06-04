@@ -1040,15 +1040,15 @@ public class PipeManager {
                 BlockFace finalFacing = lastPipeData != null ? lastPipeData.facing() : facing;
 
                 // Spawn at the pipe face (boundary between pipe and destination block)
-                // Use lower Y for horizontal pipes since item entity has height
-                double yOffset = finalFacing.getModY() == 0 ? 0.25 : 0.5;
+                double yOffset = switch (finalFacing) {
+                    case UP -> 0.65;
+                    case DOWN -> -0.35;
+                    default -> 0.25;
+                };
                 Location dropLoc = lastPipeLoc.getBlock().getLocation().add(0.5, yOffset, 0.5);
-                // Offset to the pipe's output face
-                dropLoc.add(finalFacing.getModX() * 0.6, finalFacing.getModY() * 0.6, finalFacing.getModZ() * 0.6);
-
-                // For DOWN-facing pipes, lower spawn position to avoid clipping into the head
-                if (finalFacing == BlockFace.DOWN) {
-                    dropLoc.add(0, -0.05, 0);
+                // Offset horizontal pipes to the pipe's output face
+                if (finalFacing.getModY() == 0) {
+                    dropLoc.add(finalFacing.getModX() * 0.6, 0, finalFacing.getModZ() * 0.6);
                 }
 
                 // Spawn item with velocity set during spawn to avoid dropItem's default velocity
