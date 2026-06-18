@@ -2,6 +2,7 @@ package anon.def9a2a4.pipes;
 
 import anon.def9a2a4.pipes.adapter.ContainerAdapter;
 import anon.def9a2a4.pipes.adapter.BrewingStandContainerAdapter;
+import anon.def9a2a4.pipes.adapter.CrafterContainerAdapter;
 import anon.def9a2a4.pipes.adapter.FurnaceContainerAdapter;
 import anon.def9a2a4.pipes.adapter.VanillaContainerAdapter;
 import org.bukkit.Material;
@@ -30,6 +31,7 @@ public final class ContainerAdapterRegistry {
     private static final List<ContainerAdapter> VANILLA = List.of(
             new FurnaceContainerAdapter(),
             new BrewingStandContainerAdapter(),
+            new CrafterContainerAdapter(),
             new VanillaContainerAdapter()
     );
 
