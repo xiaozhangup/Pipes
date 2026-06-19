@@ -1037,7 +1037,7 @@ public class PipeManager {
             int insertedAmount = toTransfer.getAmount() - remainingAmount;
             if (remainingAmount <= 0) {
                 transferred = true;
-            } else if (canDropAtPipeEnd(path.lastPipeLocation())) {
+            } else if (isDroppable(path.lastPipeLocation())) {
                 // 仍有剩余无法传输，掉落在链条末端
                 Location lastPipeLoc = path.lastPipeLocation();
                 PipeData lastPipeData = getPipeData(lastPipeLoc);
@@ -1125,7 +1125,7 @@ public class PipeManager {
         return false;
     }
 
-    private boolean canDropAtPipeEnd(Location lastPipeLoc) {
+    private boolean isDroppable(Location lastPipeLoc) {
         PipeData lastPipeData = getPipeData(lastPipeLoc);
         if (lastPipeData == null) return true;
         Block outputBlock = lastPipeLoc.getBlock().getRelative(lastPipeData.facing());
