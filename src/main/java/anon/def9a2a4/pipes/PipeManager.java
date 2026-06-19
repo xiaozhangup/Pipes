@@ -1033,7 +1033,11 @@ public class PipeManager {
                 remaining = tryAlternativeDestination(path.lastPipeLocation(), null, remaining);
             }
 
-            if (remaining != null && remaining.getAmount() > 0) {
+            int remainingAmount = (remaining == null) ? 0 : Math.max(0, remaining.getAmount());
+            int insertedAmount = toTransfer.getAmount() - remainingAmount;
+            if (remainingAmount <= 0) {
+                transferred = true;
+            } else if (canDropAtPipeEnd(path.lastPipeLocation())) {
                 // 仍有剩余无法传输，掉落在链条末端
                 Location lastPipeLoc = path.lastPipeLocation();
                 PipeData lastPipeData = getPipeData(lastPipeLoc);
@@ -1066,8 +1070,16 @@ public class PipeManager {
                     );
                     spawnedItem.setVelocity(velocity);
                 });
+                transferred = true;
+            } else if (insertedAmount > 0) {
+                ItemStack partialExtract = toTransfer.clone();
+                partialExtract.setAmount(insertedAmount);
+                sourceAdapter.commitExtract(sourceBlock, partialExtract);
+                return false;
+            } else {
+                // 末端被非空气方块或当前不可接收的容器堵住时，不把物品喷出到方块里。
+                sleepPipe(pipeLocation, plugin.getPipeConfig().getDestFullSleepMs());
             }
-            transferred = true;
         } else {
             // destBlock and destAdapter are already resolved above when building the 'requested' check
             if (destAdapter != null) {
@@ -1111,6 +1123,13 @@ public class PipeManager {
             sourceAdapter.commitExtract(sourceBlock, toTransfer);
         }
         return false;
+    }
+
+    private boolean canDropAtPipeEnd(Location lastPipeLoc) {
+        PipeData lastPipeData = getPipeData(lastPipeLoc);
+        if (lastPipeData == null) return true;
+        Block outputBlock = lastPipeLoc.getBlock().getRelative(lastPipeData.facing());
+        return outputBlock.getType().isAir();
     }
 
     /**
