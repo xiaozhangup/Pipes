@@ -1129,7 +1129,7 @@ public class PipeManager {
         PipeData lastPipeData = getPipeData(lastPipeLoc);
         if (lastPipeData == null) return true;
         Block outputBlock = lastPipeLoc.getBlock().getRelative(lastPipeData.facing());
-        return outputBlock.getType().isAir();
+        return outputBlock.isPassable();
     }
 
     /**
