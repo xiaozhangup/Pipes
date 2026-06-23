@@ -2,10 +2,11 @@ package anon.def9a2a4.pipes.adapter;
 
 import org.bukkit.block.Block;
 import org.bukkit.block.BrewingStand;
-import org.bukkit.block.Furnace;
 import org.bukkit.inventory.BrewerInventory;
 import org.bukkit.inventory.ItemStack;
 import org.jetbrains.annotations.Nullable;
+
+import java.util.List;
 
 /**
  * 酿造台容器适配器。
@@ -90,21 +91,21 @@ public class BrewingStandContainerAdapter implements ContainerAdapter {
 
     /**
      * 若酿造台原料格或燃料格已有物品，则声明需要更多同类物品，以便管道针对性地从源容器提取。
-     * 原料格优先于燃料格。若两者均为空则返回 {@code null}，使用默认传输行为。
+     * 原料格优先于燃料格。若两者均为空则返回空列表，使用默认传输行为。
      */
     @Override
-    public @Nullable ItemStack requestedItem(Block block) {
-        if (!(block.getState() instanceof BrewingStand stand)) return null;
+    public List<ItemStack> requestedItems(Block block) {
+        if (!(block.getState() instanceof BrewingStand stand)) return List.of();
         BrewerInventory inv = stand.getInventory();
         ItemStack ingredient = inv.getItem(INGREDIENT_SLOT);
         if (ingredient != null && !ingredient.getType().isAir() && ingredient.getAmount() < ingredient.getMaxStackSize()) {
-            return ingredient.clone();
+            return List.of(ingredient.clone());
         }
         ItemStack fuel = inv.getItem(FUEL_SLOT);
         if (fuel != null && !fuel.getType().isAir() && fuel.getAmount() < fuel.getMaxStackSize()) {
-            return fuel.clone();
+            return List.of(fuel.clone());
         }
-        return null;
+        return List.of();
     }
 
     @Override

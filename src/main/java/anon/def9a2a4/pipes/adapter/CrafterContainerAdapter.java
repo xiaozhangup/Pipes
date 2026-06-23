@@ -6,6 +6,9 @@ import org.bukkit.inventory.Inventory;
 import org.bukkit.inventory.ItemStack;
 import org.jetbrains.annotations.Nullable;
 
+import java.util.ArrayList;
+import java.util.List;
+
 /**
  * 合成器容器适配器。
  * <p>
@@ -102,17 +105,18 @@ public class CrafterContainerAdapter implements ContainerAdapter {
      * 若已有可用格子未堆满，则声明需要更多同类物品，让管道优先补齐现有合成材料。
      */
     @Override
-    public @Nullable ItemStack requestedItem(Block block) {
-        if (!(block.getState() instanceof Crafter crafter)) return null;
+    public List<ItemStack> requestedItems(Block block) {
+        if (!(block.getState() instanceof Crafter crafter)) return List.of();
         Inventory inv = crafter.getInventory();
+        List<ItemStack> requested = new ArrayList<>();
         for (int i = 0; i < SLOT_COUNT; i++) {
             if (crafter.isSlotDisabled(i)) continue;
             ItemStack item = inv.getItem(i);
             if (item != null && !item.getType().isAir() && item.getAmount() < item.getMaxStackSize()) {
-                return item.clone();
+                addRequestedItem(requested, item);
             }
         }
-        return null;
+        return requested;
     }
 
     @Override
@@ -166,5 +170,12 @@ public class CrafterContainerAdapter implements ContainerAdapter {
         ItemStack leftover = incoming.clone();
         leftover.setAmount(leftoverAmount);
         return leftover;
+    }
+
+    private static void addRequestedItem(List<ItemStack> requested, ItemStack item) {
+        for (ItemStack existing : requested) {
+            if (existing.isSimilar(item)) return;
+        }
+        requested.add(item.clone());
     }
 }

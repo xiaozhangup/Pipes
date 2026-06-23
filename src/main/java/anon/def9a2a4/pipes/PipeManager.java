@@ -984,11 +984,15 @@ public class PipeManager {
         Block destBlock = path.destination() != null ? path.destination().getBlock() : null;
         ContainerAdapter destAdapter = destBlock != null
                 ? ContainerAdapterRegistry.findAdapter(destBlock).orElse(null) : null;
-        ItemStack requested = destAdapter != null ? destAdapter.requestedItem(destBlock) : null;
+        List<ItemStack> requestedItems = destAdapter != null ? destAdapter.requestedItems(destBlock) : List.of();
 
         ItemStack toTransfer;
-        if (requested != null) {
-            toTransfer = sourceAdapter.peekExtractMatching(sourceBlock, maxToExtract, requested);
+        if (!requestedItems.isEmpty()) {
+            toTransfer = null;
+            for (ItemStack requested : requestedItems) {
+                toTransfer = sourceAdapter.peekExtractMatching(sourceBlock, maxToExtract, requested);
+                if (toTransfer != null) break;
+            }
             if (toTransfer == null) {
                 // 源容器中没有目的地所需的物品；若源容器已完全为空则休眠，否则跳过本次传输
                 if (!sourceAdapter.hasItems(sourceBlock)) {

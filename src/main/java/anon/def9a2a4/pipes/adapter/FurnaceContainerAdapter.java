@@ -6,6 +6,8 @@ import org.bukkit.inventory.FurnaceInventory;
 import org.bukkit.inventory.ItemStack;
 import org.jetbrains.annotations.Nullable;
 
+import java.util.List;
+
 /**
  * 熔炉类容器适配器（熔炉、高炉、烟熏炉）。
  * <p>
@@ -58,24 +60,24 @@ public class FurnaceContainerAdapter implements ContainerAdapter {
     /**
      * 若熔炉原料格已有物品，则声明需要更多同类物品，以便管道针对性地从源容器提取；
      * 仅当原料格已占用（且无法继续堆叠）时，才回退为声明燃料需求。
-     * 原料格为空时返回 {@code null}，避免错误地只请求燃料而阻塞新一轮熔炼输入。
+     * 原料格为空时返回空列表，避免错误地只请求燃料而阻塞新一轮熔炼输入。
      */
     @Override
-    public @Nullable ItemStack requestedItem(Block block) {
-        if (!(block.getState() instanceof Furnace furnace)) return null;
+    public List<ItemStack> requestedItems(Block block) {
+        if (!(block.getState() instanceof Furnace furnace)) return List.of();
         FurnaceInventory inv = furnace.getInventory();
         ItemStack smelting = inv.getSmelting();
         if (smelting != null && !smelting.getType().isAir()) {
             if (smelting.getAmount() < smelting.getMaxStackSize()) {
-                return smelting.clone();
+                return List.of(smelting.clone());
             }
 
             ItemStack fuel = inv.getFuel();
             if (fuel != null && !fuel.getType().isAir() && fuel.getAmount() < fuel.getMaxStackSize()) {
-                return fuel.clone();
+                return List.of(fuel.clone());
             }
         }
-        return null;
+        return List.of();
     }
 
     @Override
