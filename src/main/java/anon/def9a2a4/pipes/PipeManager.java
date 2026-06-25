@@ -990,7 +990,8 @@ public class PipeManager {
         if (!requestedItems.isEmpty()) {
             toTransfer = null;
             for (ItemStack requested : requestedItems) {
-                toTransfer = sourceAdapter.peekExtractMatching(sourceBlock, maxToExtract, requested);
+                toTransfer = sourceAdapter.peekExtract(
+                        sourceBlock, maxToExtract, item -> item.isSimilar(requested));
                 if (toTransfer != null) break;
             }
             if (toTransfer == null) {
@@ -1022,7 +1023,7 @@ public class PipeManager {
             }
         } else {
             toTransfer = destAdapter != null
-                    ? sourceAdapter.peekExtractAccepted(
+                    ? sourceAdapter.peekExtract(
                             sourceBlock, maxToExtract, item -> destAdapter.canReceive(destBlock, item))
                     : sourceAdapter.peekExtract(sourceBlock, maxToExtract);
             if (toTransfer == null) {

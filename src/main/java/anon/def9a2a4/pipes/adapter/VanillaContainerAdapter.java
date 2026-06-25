@@ -56,25 +56,7 @@ public final class VanillaContainerAdapter implements ContainerAdapter {
     }
 
     @Override
-    public @Nullable ItemStack peekExtractMatching(Block block, int maxAmount, ItemStack filter) {
-        if (!(block.getState() instanceof Container container)) return null;
-        Inventory inv = container.getInventory();
-        int collected = 0;
-        for (ItemStack item : inv.getContents()) {
-            if (item == null || item.getType().isAir()) continue;
-            if (item.isSimilar(filter)) {
-                collected = Math.min(maxAmount, collected + item.getAmount());
-                if (collected >= maxAmount) break;
-            }
-        }
-        if (collected == 0) return null;
-        ItemStack result = filter.clone();
-        result.setAmount(collected);
-        return result;
-    }
-
-    @Override
-    public @Nullable ItemStack peekExtractAccepted(Block block, int maxAmount, Predicate<ItemStack> accepted) {
+    public @Nullable ItemStack peekExtract(Block block, int maxAmount, Predicate<ItemStack> filter) {
         if (!(block.getState() instanceof Container container)) return null;
         Inventory inv = container.getInventory();
         ItemStack template = null;
@@ -84,7 +66,7 @@ public final class VanillaContainerAdapter implements ContainerAdapter {
             if (template == null) {
                 ItemStack candidate = item.clone();
                 candidate.setAmount(Math.min(maxAmount, item.getAmount()));
-                if (!accepted.test(candidate)) continue;
+                if (!filter.test(candidate)) continue;
                 template = item.clone();
                 collected = candidate.getAmount();
             } else if (item.isSimilar(template)) {

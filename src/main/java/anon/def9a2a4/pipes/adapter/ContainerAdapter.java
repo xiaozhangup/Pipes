@@ -16,9 +16,7 @@ import java.util.function.Predicate;
  * <p>
  * 调用顺序（每次传输）：
  * <ol>
- *   <li>source 侧：{@link #hasItems(Block)} → {@link #peekExtractMatching(Block, int, ItemStack)}
- *       （若目的地声明了 {@link #requestedItems(Block)}，则使用过滤提取；否则
- *       {@link #peekExtractAccepted(Block, int, Predicate)}）</li>
+ *   <li>source 侧：{@link #hasItems(Block)} → {@link #peekExtract(Block, int, Predicate)}</li>
  *   <li>dest 侧：{@link #canReceive(Block, ItemStack)} → {@link #insert(Block, ItemStack)}</li>
  *   <li>存入成功后：{@link #commitExtract(Block, ItemStack)}</li>
  * </ol>
@@ -43,7 +41,9 @@ public interface ContainerAdapter {
      * @param block 源方块
      * @return 是否存在可提取物品
      */
-    boolean hasItems(Block block);
+    default boolean hasItems(Block block) {
+        return peekExtract(block, 1) != null;
+    }
 
     /**
      * 预览可提取的物品，但不实际移除。
@@ -57,6 +57,24 @@ public interface ContainerAdapter {
     @Nullable ItemStack peekExtract(Block block, int maxAmount);
 
     /**
+     * 预览符合过滤条件的可提取物品，但不实际移除。
+     * <p>
+     * 默认实现只检查 {@link #peekExtract(Block, int)} 返回的第一个候选；
+     * 普通清单类适配器可覆盖此方法以扫描整个清单，跳过不符合过滤条件的候选。
+     *
+     * @param block     源方块
+     * @param maxAmount 本次允许提取的最大数量
+     * @param filter    候选物品过滤条件
+     * @return 将被提取的物品副本；若无符合条件的物品则返回 {@code null}
+     */
+    @Nullable
+    default ItemStack peekExtract(Block block, int maxAmount, Predicate<ItemStack> filter) {
+        ItemStack item = peekExtract(block, maxAmount);
+        if (item == null) return null;
+        return filter.test(item) ? item : null;
+    }
+
+    /**
      * 提交提取操作，从容器中实际移除物品。
      * <p>
      * 仅在 {@link #insert} 成功后调用，保证物品不会凭空消失。
@@ -65,44 +83,6 @@ public interface ContainerAdapter {
      * @param extracted 与 {@link #peekExtract} 返回值数量一致的物品
      */
     void commitExtract(Block block, ItemStack extracted);
-
-    /**
-     * 预览与指定过滤器匹配的可提取物品，但不实际移除。
-     * <p>
-     * 当目的地通过 {@link #requestedItems(Block)} 声明了需求时，管道系统将调用此方法以针对性地提取物品。
-     * 默认实现：调用 {@link #peekExtract}，若返回物品与 {@code filter} 不匹配则返回 {@code null}。
-     * 实现类可覆盖此方法以扫描整个清单，找到第一个匹配的物品。
-     *
-     * @param block     源方块
-     * @param maxAmount 本次允许提取的最大数量
-     * @param filter    目的地期望的物品类型（通过 {@link ItemStack#isSimilar} 判断匹配）
-     * @return 将被提取的物品副本；若无匹配物品则返回 {@code null}
-     */
-    @Nullable
-    default ItemStack peekExtractMatching(Block block, int maxAmount, ItemStack filter) {
-        ItemStack item = peekExtract(block, maxAmount);
-        if (item == null) return null;
-        return item.isSimilar(filter) ? item : null;
-    }
-
-    /**
-     * 预览符合接收条件的可提取物品，但不实际移除。
-     * <p>
-     * 当目的地没有声明具体需求时，管道可用此方法跳过目的地明确拒收的物品，
-     * 继续查找同一源容器中其他可接收物品。默认实现只检查 {@link #peekExtract(Block, int)}
-     * 返回的第一个候选；普通清单类适配器可覆盖此方法以扫描整个清单。
-     *
-     * @param block     源方块
-     * @param maxAmount 本次允许提取的最大数量
-     * @param accepted  目标容器是否接受该物品
-     * @return 将被提取的物品副本；若无可接收物品则返回 {@code null}
-     */
-    @Nullable
-    default ItemStack peekExtractAccepted(Block block, int maxAmount, Predicate<ItemStack> accepted) {
-        ItemStack item = peekExtract(block, maxAmount);
-        if (item == null) return null;
-        return accepted.test(item) ? item : null;
-    }
 
     /**
      * 返回该容器当前期望接收的物品类型列表，供管道系统按顺序从源容器提取对应物品。
@@ -119,12 +99,12 @@ public interface ContainerAdapter {
     }
 
     /**
-     * 快速判断该方块当前是否能接受物品。
+     * 快速判断该方块当前是否存在任意可接收空间。
      * <p>
-     * 用于 {@code findDestination} 路径寻找时判断终点是否有效。
+     * 用于 {@code findDestination} 路径寻找时判断终点是否有效；此时尚无具体物品上下文。
      *
      * @param block 目标方块
-     * @return 是否接受物品
+     * @return 是否能接收任意物品
      */
     boolean canReceive(Block block);
 

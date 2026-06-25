@@ -5,6 +5,8 @@ import org.bukkit.block.Block;
 import org.bukkit.inventory.ItemStack;
 import org.jetbrains.annotations.Nullable;
 
+import java.util.function.Predicate;
+
 /**
  * 潜影盒容器适配器。
  * <p>
@@ -30,8 +32,8 @@ public final class ShulkerBoxContainerAdapter implements ContainerAdapter {
     }
 
     @Override
-    public @Nullable ItemStack peekExtractMatching(Block block, int maxAmount, ItemStack filter) {
-        return vanilla.peekExtractMatching(block, maxAmount, filter);
+    public @Nullable ItemStack peekExtract(Block block, int maxAmount, Predicate<ItemStack> filter) {
+        return vanilla.peekExtract(block, maxAmount, filter);
     }
 
     @Override
