@@ -4,6 +4,7 @@ import anon.def9a2a4.pipes.adapter.ContainerAdapter;
 import anon.def9a2a4.pipes.adapter.BrewingStandContainerAdapter;
 import anon.def9a2a4.pipes.adapter.CrafterContainerAdapter;
 import anon.def9a2a4.pipes.adapter.FurnaceContainerAdapter;
+import anon.def9a2a4.pipes.adapter.ShulkerBoxContainerAdapter;
 import anon.def9a2a4.pipes.adapter.VanillaContainerAdapter;
 import org.bukkit.Material;
 import org.bukkit.block.Block;
@@ -32,6 +33,7 @@ public final class ContainerAdapterRegistry {
             new FurnaceContainerAdapter(),
             new BrewingStandContainerAdapter(),
             new CrafterContainerAdapter(),
+            new ShulkerBoxContainerAdapter(),
             new VanillaContainerAdapter()
     );
 

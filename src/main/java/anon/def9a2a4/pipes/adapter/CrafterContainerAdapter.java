@@ -8,6 +8,7 @@ import org.jetbrains.annotations.Nullable;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.function.Predicate;
 
 /**
  * 合成器容器适配器。
@@ -79,6 +80,32 @@ public class CrafterContainerAdapter implements ContainerAdapter {
     }
 
     @Override
+    public @Nullable ItemStack peekExtractAccepted(Block block, int maxAmount, Predicate<ItemStack> accepted) {
+        if (!(block.getState() instanceof Crafter crafter)) return null;
+        Inventory inv = crafter.getInventory();
+        ItemStack template = null;
+        int collected = 0;
+        for (int i = 0; i < SLOT_COUNT; i++) {
+            if (crafter.isSlotDisabled(i)) continue;
+            ItemStack item = inv.getItem(i);
+            if (item == null || item.getType().isAir()) continue;
+            if (template == null) {
+                ItemStack candidate = item.clone();
+                candidate.setAmount(Math.min(maxAmount, item.getAmount()));
+                if (!accepted.test(candidate)) continue;
+                template = item.clone();
+                collected = candidate.getAmount();
+            } else if (item.isSimilar(template)) {
+                collected = Math.min(maxAmount, collected + item.getAmount());
+            }
+            if (collected >= maxAmount) break;
+        }
+        if (template == null) return null;
+        template.setAmount(collected);
+        return template;
+    }
+
+    @Override
     public void commitExtract(Block block, ItemStack extracted) {
         if (!(block.getState() instanceof Crafter crafter)) return;
         Inventory inv = crafter.getInventory();
@@ -126,7 +153,22 @@ public class CrafterContainerAdapter implements ContainerAdapter {
         for (int i = 0; i < SLOT_COUNT; i++) {
             if (crafter.isSlotDisabled(i)) continue;
             ItemStack item = inv.getItem(i);
-            if (item == null || item.getType().isAir() || item.getAmount() < item.getMaxStackSize()) {
+            if (item != null && !item.getType().isAir() && item.getAmount() < item.getMaxStackSize()) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    @Override
+    public boolean canReceive(Block block, ItemStack item) {
+        if (!(block.getState() instanceof Crafter crafter)) return false;
+        Inventory inv = crafter.getInventory();
+        for (int i = 0; i < SLOT_COUNT; i++) {
+            if (crafter.isSlotDisabled(i)) continue;
+            ItemStack existing = inv.getItem(i);
+            if (existing == null || existing.getType().isAir()) continue;
+            if (existing.isSimilar(item) && existing.getAmount() < existing.getMaxStackSize()) {
                 return true;
             }
         }
@@ -145,14 +187,6 @@ public class CrafterContainerAdapter implements ContainerAdapter {
             if (existing == null || existing.getType().isAir() || !existing.isSimilar(leftover)) continue;
             leftover = tryFillSlot(inv, i, existing, leftover);
             if (leftover == null || leftover.getAmount() <= 0) return null;
-        }
-
-        for (int i = 0; i < SLOT_COUNT; i++) {
-            if (crafter.isSlotDisabled(i)) continue;
-            ItemStack existing = inv.getItem(i);
-            if (existing != null && !existing.getType().isAir()) continue;
-            inv.setItem(i, leftover);
-            return null;
         }
 
         return leftover;

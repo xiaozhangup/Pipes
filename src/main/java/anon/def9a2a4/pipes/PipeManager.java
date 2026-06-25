@@ -1021,10 +1021,33 @@ public class PipeManager {
                 return false;
             }
         } else {
-            toTransfer = sourceAdapter.peekExtract(sourceBlock, maxToExtract);
+            toTransfer = destAdapter != null
+                    ? sourceAdapter.peekExtractAccepted(
+                            sourceBlock, maxToExtract, item -> destAdapter.canReceive(destBlock, item))
+                    : sourceAdapter.peekExtract(sourceBlock, maxToExtract);
             if (toTransfer == null) {
-                // 源容器为空，进入休眠：接下来若干毫秒内不再检测此管道
-                sleepPipe(pipeLocation, plugin.getPipeConfig().getSourceEmptySleepMs());
+                // 没有可由当前目的地接收的候选物品；若源容器已空则休眠。
+                if (!sourceAdapter.hasItems(sourceBlock)) {
+                    sleepPipe(pipeLocation, plugin.getPipeConfig().getSourceEmptySleepMs());
+                    return false;
+                }
+
+                // 源容器有物品，但当前目的地按物品类型拒收；尝试备用出口。
+                ItemStack anyItem = sourceAdapter.peekExtract(sourceBlock, maxToExtract);
+                if (anyItem != null) {
+                    ItemStack remaining = tryCornerJunctionAlternatives(path, anyItem);
+                    if (remaining != null && remaining.getAmount() > 0) {
+                        remaining = tryAlternativeDestination(path.lastPipeLocation(), path.destination(), remaining);
+                    }
+
+                    int remainingAmount = (remaining == null) ? 0 : Math.max(0, remaining.getAmount());
+                    int insertedAmount = anyItem.getAmount() - remainingAmount;
+                    if (insertedAmount > 0) {
+                        ItemStack extracted = anyItem.clone();
+                        extracted.setAmount(insertedAmount);
+                        sourceAdapter.commitExtract(sourceBlock, extracted);
+                    }
+                }
                 return false;
             }
         }
@@ -1087,7 +1110,9 @@ public class PipeManager {
         } else {
             // destBlock and destAdapter are already resolved above when building the 'requested' check
             if (destAdapter != null) {
-                ItemStack leftover = destAdapter.insert(destBlock, toTransfer);
+                ItemStack leftover = destAdapter.canReceive(destBlock, toTransfer)
+                        ? destAdapter.insert(destBlock, toTransfer)
+                        : toTransfer;
                 int leftoverAmount = (leftover == null) ? 0 : Math.max(0, leftover.getAmount());
                 int insertedAmount = toTransfer.getAmount() - leftoverAmount;
                 if (leftoverAmount <= 0) {
@@ -1188,7 +1213,7 @@ public class PipeManager {
 
                 // 先尝试直接相邻容器
                 ContainerAdapter adjAdapter = ContainerAdapterRegistry.findAdapter(adjacent).orElse(null);
-                if (adjAdapter != null && adjAdapter.canReceive(adjacent)) {
+                if (adjAdapter != null && adjAdapter.canReceive(adjacent, remaining)) {
                     ItemStack leftover = adjAdapter.insert(adjacent, remaining);
                     if (leftover == null || leftover.getAmount() <= 0) return null;
                     remaining = leftover;
@@ -1208,7 +1233,7 @@ public class PipeManager {
                 if (altPath.destination() != null) {
                     Block destBlock = altPath.destination().getBlock();
                     ContainerAdapter destAdapter = ContainerAdapterRegistry.findAdapter(destBlock).orElse(null);
-                    if (destAdapter != null && destAdapter.canReceive(destBlock)) {
+                    if (destAdapter != null && destAdapter.canReceive(destBlock, branchRemaining)) {
                         ItemStack leftover = destAdapter.insert(destBlock, branchRemaining);
                         branchRemaining = (leftover == null || leftover.getAmount() <= 0) ? null : leftover;
                     }
@@ -1278,7 +1303,7 @@ public class PipeManager {
             if (Objects.equals(adjLoc, normalizedPrimary)) continue;
             // 先尝试直接相邻容器
             ContainerAdapter adapter = ContainerAdapterRegistry.findAdapter(adjacent).orElse(null);
-            if (adapter != null && adapter.canReceive(adjacent)) {
+            if (adapter != null && adapter.canReceive(adjacent, remaining)) {
                 ItemStack leftover = adapter.insert(adjacent, remaining);
                 if (leftover == null || leftover.getAmount() <= 0) return null;
                 remaining = leftover;
@@ -1300,7 +1325,7 @@ public class PipeManager {
                 if (!Objects.equals(altDestLoc, normalizedPrimary)) {
                     Block altDestBlock = altPath.destination().getBlock();
                     ContainerAdapter altDestAdapter = ContainerAdapterRegistry.findAdapter(altDestBlock).orElse(null);
-                    if (altDestAdapter != null && altDestAdapter.canReceive(altDestBlock)) {
+                    if (altDestAdapter != null && altDestAdapter.canReceive(altDestBlock, branchRemaining)) {
                         ItemStack leftover = altDestAdapter.insert(altDestBlock, branchRemaining);
                         branchRemaining = (leftover == null || leftover.getAmount() <= 0) ? null : leftover;
                     }

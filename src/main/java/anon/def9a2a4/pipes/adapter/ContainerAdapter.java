@@ -6,6 +6,7 @@ import org.bukkit.inventory.ItemStack;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.List;
+import java.util.function.Predicate;
 
 /**
  * 自定义容器适配器接口。
@@ -16,8 +17,9 @@ import java.util.List;
  * 调用顺序（每次传输）：
  * <ol>
  *   <li>source 侧：{@link #hasItems(Block)} → {@link #peekExtractMatching(Block, int, ItemStack)}
- *       （若目的地声明了 {@link #requestedItems(Block)}，则使用过滤提取；否则 {@link #peekExtract(Block, int)}）</li>
- *   <li>dest 侧：{@link #canReceive(Block)} → {@link #insert(Block, ItemStack)}</li>
+ *       （若目的地声明了 {@link #requestedItems(Block)}，则使用过滤提取；否则
+ *       {@link #peekExtractAccepted(Block, int, Predicate)}）</li>
+ *   <li>dest 侧：{@link #canReceive(Block, ItemStack)} → {@link #insert(Block, ItemStack)}</li>
  *   <li>存入成功后：{@link #commitExtract(Block, ItemStack)}</li>
  * </ol>
  */
@@ -84,6 +86,25 @@ public interface ContainerAdapter {
     }
 
     /**
+     * 预览符合接收条件的可提取物品，但不实际移除。
+     * <p>
+     * 当目的地没有声明具体需求时，管道可用此方法跳过目的地明确拒收的物品，
+     * 继续查找同一源容器中其他可接收物品。默认实现只检查 {@link #peekExtract(Block, int)}
+     * 返回的第一个候选；普通清单类适配器可覆盖此方法以扫描整个清单。
+     *
+     * @param block     源方块
+     * @param maxAmount 本次允许提取的最大数量
+     * @param accepted  目标容器是否接受该物品
+     * @return 将被提取的物品副本；若无可接收物品则返回 {@code null}
+     */
+    @Nullable
+    default ItemStack peekExtractAccepted(Block block, int maxAmount, Predicate<ItemStack> accepted) {
+        ItemStack item = peekExtract(block, maxAmount);
+        if (item == null) return null;
+        return accepted.test(item) ? item : null;
+    }
+
+    /**
      * 返回该容器当前期望接收的物品类型列表，供管道系统按顺序从源容器提取对应物品。
      * <p>
      * 默认返回空列表，表示该容器不声明需求，管道将以默认方式（提取源中任意物品）传输。
@@ -106,6 +127,20 @@ public interface ContainerAdapter {
      * @return 是否接受物品
      */
     boolean canReceive(Block block);
+
+    /**
+     * 判断该方块当前是否能接受指定物品。
+     * <p>
+     * 默认沿用 {@link #canReceive(Block)}，只关心容器是否能作为目标；
+     * 需要拒收特定物品的适配器可覆盖此方法。
+     *
+     * @param block 目标方块
+     * @param item  待存入物品
+     * @return 是否接受该物品
+     */
+    default boolean canReceive(Block block, ItemStack item) {
+        return canReceive(block);
+    }
 
     /**
      * 尝试将物品存入容器。

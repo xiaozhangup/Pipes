@@ -8,6 +8,7 @@ import org.bukkit.inventory.ItemStack;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.HashMap;
+import java.util.function.Predicate;
 
 /**
  * 内置原版容器适配器。
@@ -70,6 +71,30 @@ public final class VanillaContainerAdapter implements ContainerAdapter {
         ItemStack result = filter.clone();
         result.setAmount(collected);
         return result;
+    }
+
+    @Override
+    public @Nullable ItemStack peekExtractAccepted(Block block, int maxAmount, Predicate<ItemStack> accepted) {
+        if (!(block.getState() instanceof Container container)) return null;
+        Inventory inv = container.getInventory();
+        ItemStack template = null;
+        int collected = 0;
+        for (ItemStack item : inv.getContents()) {
+            if (item == null || item.getType().isAir()) continue;
+            if (template == null) {
+                ItemStack candidate = item.clone();
+                candidate.setAmount(Math.min(maxAmount, item.getAmount()));
+                if (!accepted.test(candidate)) continue;
+                template = item.clone();
+                collected = candidate.getAmount();
+            } else if (item.isSimilar(template)) {
+                collected = Math.min(maxAmount, collected + item.getAmount());
+            }
+            if (collected >= maxAmount) break;
+        }
+        if (template == null) return null;
+        template.setAmount(collected);
+        return template;
     }
 
     @Override
