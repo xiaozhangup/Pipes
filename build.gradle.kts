@@ -1,7 +1,7 @@
 plugins {
     java
-    id("com.gradleup.shadow") version "9.3.0"
-    id("org.jetbrains.kotlin.jvm") version "2.1.21"
+    id("com.gradleup.shadow") version "9.4.3"
+    id("org.jetbrains.kotlin.jvm") version "2.3.20"
     id("maven-publish")
 }
 
@@ -10,7 +10,7 @@ version = "0.1.5"
 
 java {
     toolchain {
-        languageVersion.set(JavaLanguageVersion.of(21))
+        languageVersion.set(JavaLanguageVersion.of(25))
     }
 }
 
@@ -24,7 +24,7 @@ repositories {
 }
 
 dependencies {
-    compileOnly("me.xiaozhangup.octopus:octopus-api:1.21.11-R0.1-SNAPSHOT")
+    compileOnly("me.xiaozhangup.octopus:octopus-api:26.2-R0.1-SNAPSHOT")
     compileOnly("me.xiaozhangup:SlimeCargoNext:1.0.2")
     compileOnly(kotlin("stdlib"))
 }
