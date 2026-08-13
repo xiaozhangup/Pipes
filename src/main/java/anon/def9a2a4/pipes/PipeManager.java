@@ -23,6 +23,8 @@ import java.util.*;
 public class PipeManager {
 
     private static final int MAX_FALLBACK_DEPTH = 24;
+    private static final float DISPLAY_VIEW_RANGE = 0.5F;
+    private static final float DISPLAY_CULLING_SIZE = 3.0F;
 
     private record CachedPath(Location destination, Location lastPipeLocation,
                                List<Location> pipeChain, int minItemsPerTransfer) {}
@@ -33,10 +35,10 @@ public class PipeManager {
     private final Random random = new Random();
     private final Map<Location, PipeData> pipes = new HashMap<>();
     private final Map<Location, Long> lastTransferTick = new HashMap<>();
+    private final TransferSchedule<Location> transferSchedule = new TransferSchedule<>();
 
     private final Map<Location, CachedPath> pathCache = new HashMap<>();
     private final Set<Location> dirtyPaths = new HashSet<>();
-    private final Map<Location, Long> sleepUntil = new HashMap<>();
     private final Map<Location, Long> nullDestRecheckUntil = new HashMap<>();
     private final Map<Location, Set<Location>> chainMembership = new HashMap<>();
 
@@ -67,7 +69,9 @@ public class PipeManager {
 
     public void registerPipe(Location location, BlockFace facing, List<UUID> displayEntityIds, PipeVariant variant) {
         Location normalized = normalizeLocation(location);
-        pipes.put(normalized, new PipeData(facing, displayEntityIds, variant));
+        PipeData data = new PipeData(facing, displayEntityIds, variant);
+        pipes.put(normalized, data);
+        reconcileTransferSchedule(normalized, data);
         evictCacheByMember(normalized);
         dirtyPaths.add(normalized);
     }
@@ -89,7 +93,7 @@ public class PipeManager {
         Location normalized = normalizeLocation(location);
         PipeData data = pipes.remove(normalized);
         lastTransferTick.remove(normalized);
-        sleepUntil.remove(normalized);
+        transferSchedule.cancel(normalized);
         nullDestRecheckUntil.remove(normalized);
         dirtyPaths.remove(normalized);
         evictCacheByMember(normalized);
@@ -155,7 +159,9 @@ public class PipeManager {
         if (data == null) return;
 
         // 更新 PipeData（朝向和显示实体 UUID 不变，仅替换变体）
-        pipes.put(normalized, new PipeData(data.facing(), data.displayEntityIds(), newVariant));
+        PipeData converted = new PipeData(data.facing(), data.displayEntityIds(), newVariant);
+        pipes.put(normalized, converted);
+        reconcileTransferSchedule(normalized, converted);
 
         // 更新头颅方块贴图
         Block block = normalized.getBlock();
@@ -257,6 +263,8 @@ public class PipeManager {
             if (pipeFacing == face.getOppositeFace()) {
                 wakeUpPipe(adjacentLoc);
                 invalidatePath(adjacentLoc);
+            } else if (pipeFacing == face) {
+                wakeUpPipe(adjacentLoc);
             }
         }
     }
@@ -279,6 +287,11 @@ public class PipeManager {
 
         if (pipeLocation.getWorld() != world) throw new RuntimeException("Location world does not match PipeManager world");
         if (world == null) return;
+
+        for (UUID uuid : data.displayEntityIds()) {
+            Entity entity = world.getEntity(uuid);
+            if (entity instanceof ItemDisplay display) configureDisplay(display);
+        }
 
         updatePipeBlockHead(normalized, data.variant(), data.facing());
 
@@ -404,6 +417,7 @@ public class PipeManager {
             ItemDisplay dirDisplay = world.spawn(spawnLoc, ItemDisplay.class, entity -> {
                 entity.setItemStack(dirItem);
                 entity.setPersistent(true);
+                configureDisplay(entity);
                 entity.setTransformation(dirTransform);
                 PipeTags.addPipeTag(entity, PipeTags.createDirectionalTag(normalized, outputFace, variant));
             });
@@ -474,6 +488,7 @@ public class PipeManager {
         ItemDisplay mainDisplay = world.spawn(spawnLoc, ItemDisplay.class, entity -> {
             entity.setItemStack(pipeItem);
             entity.setPersistent(true);
+            configureDisplay(entity);
             entity.setTransformation(transformation);
             PipeTags.addPipeTag(entity, PipeTags.createTag(location, facing, variant));
         });
@@ -490,6 +505,7 @@ public class PipeManager {
                 ItemDisplay directionalDisplay = world.spawn(spawnLoc, ItemDisplay.class, entity -> {
                     entity.setItemStack(directionalItem);
                     entity.setPersistent(true);
+                    configureDisplay(entity);
                     entity.setTransformation(directionalTransformation);
                     PipeTags.addPipeTag(entity, PipeTags.createDirectionalTag(location, outputFace, variant));
                 });
@@ -782,9 +798,16 @@ public class PipeManager {
         return world.spawn(spawnLoc, ItemDisplay.class, entity -> {
             entity.setItemStack(headItem);
             entity.setPersistent(true);
+            configureDisplay(entity);
             entity.setTransformation(transformation);
             PipeTags.addPipeTag(entity, PipeTags.createHeadDisplayTag(normalized, facing, variant));
         });
+    }
+
+    private static void configureDisplay(ItemDisplay display) {
+        display.setViewRange(DISPLAY_VIEW_RANGE);
+        display.setDisplayWidth(DISPLAY_CULLING_SIZE);
+        display.setDisplayHeight(DISPLAY_CULLING_SIZE);
     }
 
     private AxisAngle4f buildCornerVerticalRotation(BlockFace facing) {
@@ -882,44 +905,51 @@ public class PipeManager {
     private void transferAllPipes() {
         long now = System.currentTimeMillis();
         long currentTick = Bukkit.getServer().getCurrentTick();
-        List<Location> toRemove = new ArrayList<>();
+        for (Location loc : transferSchedule.pollWoken(now)) {
+            reconcileTransferSchedule(loc, pipes.get(loc));
+        }
 
-        for (Map.Entry<Location, PipeData> entry : pipes.entrySet()) {
-            Location loc = entry.getKey();
-            PipeData data = entry.getValue();
-
-            // 休眠检测：若管道正在休眠则直接跳过，不做任何计算
-            Long wakeTime = sleepUntil.get(loc);
-            if (wakeTime != null) {
-                if (now < wakeTime) continue;
-                sleepUntil.remove(loc); // 已醒，清除记录
-            }
-
-            int intervalTicks = Math.max(1, data.variant().getTransferIntervalTicks());
-            Long lastTick = lastTransferTick.get(loc);
-
-            if (lastTick == null) {
-                if (!isTransferPhase(currentTick, loc, intervalTicks)) {
-                    continue;
-                }
-            } else if ((currentTick - lastTick) < intervalTicks) {
+        List<Location> duePipes = transferSchedule.pollDue(currentTick);
+        // Keep the whole batch recoverable if an adapter throws before later entries are processed.
+        for (Location loc : duePipes) transferSchedule.schedule(loc, currentTick);
+        for (Location loc : duePipes) {
+            PipeData data = pipes.get(loc);
+            if (data == null || data.variant().getBehaviorType() == BehaviorType.CORNER) {
+                transferSchedule.cancel(loc);
+                lastTransferTick.remove(loc);
                 continue;
             }
 
             if (transferItems(loc, data)) {
-                toRemove.add(loc);
+                unregisterPipe(loc);
+                continue;
             }
-            lastTransferTick.put(loc, currentTick);
-        }
 
-        for (Location loc : toRemove) {
-            unregisterPipe(loc);
+            lastTransferTick.put(loc, currentTick);
+            PipeData currentData = pipes.get(loc);
+            if (currentData != null
+                    && currentData.variant().getBehaviorType() != BehaviorType.CORNER
+                    && !transferSchedule.isSleeping(loc)) {
+                int intervalTicks = Math.max(1, currentData.variant().getTransferIntervalTicks());
+                transferSchedule.schedule(loc, currentTick + intervalTicks);
+            }
         }
     }
 
-    private boolean isTransferPhase(long currentTick, Location location, int intervalTicks) {
-        if (intervalTicks <= 1) return true;
-        return Math.floorMod(currentTick, intervalTicks) == getTransferPhase(location, intervalTicks);
+    private void reconcileTransferSchedule(Location loc, PipeData data) {
+        if (data == null || data.variant().getBehaviorType() == BehaviorType.CORNER) {
+            transferSchedule.cancel(loc);
+            lastTransferTick.remove(loc);
+            return;
+        }
+        if (transferSchedule.isSleeping(loc)) return;
+
+        int intervalTicks = Math.max(1, data.variant().getTransferIntervalTicks());
+        long currentTick = Bukkit.getServer().getCurrentTick();
+        Long lastTick = lastTransferTick.get(loc);
+        long dueTick = TransferSchedule.nextDueTick(
+                currentTick, lastTick, getTransferPhase(loc, intervalTicks), intervalTicks);
+        transferSchedule.schedule(loc, dueTick);
     }
 
     private int getTransferPhase(Location location, int intervalTicks) {
@@ -933,7 +963,7 @@ public class PipeManager {
      */
     private void sleepPipe(Location normalized, long durationMs) {
         if (durationMs <= 0) return;
-        sleepUntil.put(normalized, System.currentTimeMillis() + durationMs);
+        transferSchedule.sleep(normalized, System.currentTimeMillis() + durationMs);
     }
 
     /**
@@ -941,8 +971,9 @@ public class PipeManager {
      */
     public void wakeUpPipe(Location location) {
         Location normalized = normalizeLocation(location);
-        sleepUntil.remove(normalized);
+        transferSchedule.cancel(normalized);
         nullDestRecheckUntil.remove(normalized); // 同时重置末端探测冷却
+        reconcileTransferSchedule(normalized, pipes.get(normalized));
     }
 
     /**
@@ -968,6 +999,7 @@ public class PipeManager {
         Block sourceBlock = pipeBlock.getRelative(sourceDirection);
         ContainerAdapter sourceAdapter = ContainerAdapterRegistry.findAdapter(sourceBlock).orElse(null);
         if (sourceAdapter == null) {
+            sleepPipe(pipeLocation, plugin.getPipeConfig().getSourceEmptySleepMs());
             return false;
         }
 
@@ -1483,7 +1515,7 @@ public class PipeManager {
         stopTasks();
         pipes.clear();
         lastTransferTick.clear();
-        sleepUntil.clear();
+        transferSchedule.clear();
         pathCache.clear();
         dirtyPaths.clear();
         nullDestRecheckUntil.clear();
@@ -1731,7 +1763,7 @@ public class PipeManager {
 
             if (locChunkX == chunkX && locChunkZ == chunkZ) {
                 lastTransferTick.remove(loc);
-                sleepUntil.remove(loc);
+                transferSchedule.cancel(loc);
                 nullDestRecheckUntil.remove(loc);
                 dirtyPaths.remove(loc);
                 evictCacheByMember(loc);

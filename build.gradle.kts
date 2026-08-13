@@ -1,6 +1,6 @@
 plugins {
     java
-    id("com.gradleup.shadow") version "9.4.3"
+    id("me.xiaozhangup.sftp-uploader") version "0.1.0"
     id("org.jetbrains.kotlin.jvm") version "2.3.20"
     id("maven-publish")
 }
@@ -45,13 +45,6 @@ tasks {
             attributes["paperweight-mappings-namespace"] = "mojang"
         }
     }
-
-    shadowJar {
-        relocate("org.bstats", "anon.def9a2a4.bstats")
-        mergeServiceFiles()
-        archiveClassifier.set("")
-        archiveBaseName.set("Pipes")
-    }
 }
 
 publishing {
@@ -66,4 +59,10 @@ publishing {
     repositories {
         mavenLocal()
     }
+}
+
+sftpUploader {
+    host.set("xiaozhangup@s1.dimc.cloud")
+    target.set("Minecraft")
+    jars.set(listOf(layout.buildDirectory.file("libs/Pipes-0.1.5.jar").get().asFile.absolutePath))
 }
