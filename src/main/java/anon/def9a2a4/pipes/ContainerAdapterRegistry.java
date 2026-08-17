@@ -7,14 +7,18 @@ import anon.def9a2a4.pipes.adapter.FurnaceContainerAdapter;
 import anon.def9a2a4.pipes.adapter.ShulkerBoxContainerAdapter;
 import anon.def9a2a4.pipes.adapter.VanillaContainerAdapter;
 import org.bukkit.Material;
+import org.bukkit.Tag;
 import org.bukkit.block.Block;
+import org.bukkit.block.BrewingStand;
 import org.bukkit.block.Container;
+import org.bukkit.block.Crafter;
+import org.bukkit.block.Furnace;
 
 import java.util.ArrayList;
-import java.util.EnumSet;
+import java.util.EnumMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
-import java.util.Set;
 
 /**
  * 管道容器适配器注册表。
@@ -29,15 +33,9 @@ import java.util.Set;
 public final class ContainerAdapterRegistry {
 
     /** 内置原版容器适配器，始终作为 fallback。 */
-    private static final List<ContainerAdapter> VANILLA = List.of(
-            new FurnaceContainerAdapter(),
-            new BrewingStandContainerAdapter(),
-            new CrafterContainerAdapter(),
-            new ShulkerBoxContainerAdapter(),
-            new VanillaContainerAdapter()
-    );
-
-    private static final Set<Material> VANILLA_CONTAINER_MATERIALS = createVanillaContainerMaterials();
+    private static final ContainerAdapter SHULKER_BOX = new ShulkerBoxContainerAdapter();
+    private static final ContainerAdapter VANILLA_CONTAINER = new VanillaContainerAdapter();
+    private static final Map<Material, ContainerAdapter> VANILLA = createVanillaAdapters();
 
     /** 已注册的自定义适配器列表（越早注册优先级越高）。 */
     private static final List<ContainerAdapter> adapters = new ArrayList<>();
@@ -80,25 +78,29 @@ public final class ContainerAdapterRegistry {
                 return Optional.of(adapter);
             }
         }
-        if (!VANILLA_CONTAINER_MATERIALS.contains(block.getType())) {
-            return Optional.empty();
+        Material material = block.getType();
+        ContainerAdapter adapter = VANILLA.get(material);
+        if (adapter == VANILLA_CONTAINER && Tag.SHULKER_BOXES.isTagged(material)) {
+            adapter = SHULKER_BOX;
         }
-        for (ContainerAdapter adapter : VANILLA) {
-            if (adapter.canHandle(block)) {
-                return Optional.of(adapter);
-            }
-        }
-        return Optional.empty();
+        return Optional.ofNullable(adapter);
     }
 
-    private static Set<Material> createVanillaContainerMaterials() {
-        EnumSet<Material> materials = EnumSet.noneOf(Material.class);
+    private static Map<Material, ContainerAdapter> createVanillaAdapters() {
+        ContainerAdapter furnace = new FurnaceContainerAdapter();
+        ContainerAdapter brewingStand = new BrewingStandContainerAdapter();
+        ContainerAdapter crafter = new CrafterContainerAdapter();
+        Map<Material, ContainerAdapter> adapters = new EnumMap<>(Material.class);
         for (Material material : Material.values()) {
             if (!material.isBlock()) continue;
-            if (material.createBlockData().createBlockState() instanceof Container) {
-                materials.add(material);
-            }
+            if (!(material.createBlockData().createBlockState() instanceof Container state)) continue;
+
+            ContainerAdapter adapter = state instanceof Furnace ? furnace
+                    : state instanceof BrewingStand ? brewingStand
+                    : state instanceof Crafter ? crafter
+                    : VANILLA_CONTAINER;
+            adapters.put(material, adapter);
         }
-        return materials;
+        return adapters;
     }
 }
