@@ -23,7 +23,7 @@ import java.util.*;
 public class PipeManager {
 
     private static final int MAX_FALLBACK_DEPTH = 24;
-    private static final float DISPLAY_VIEW_RANGE = 0.5F;
+    private static final float DISPLAY_VIEW_RANGE = 0.8F;
     private static final float DISPLAY_CULLING_SIZE = 3.0F;
 
     private record CachedPath(Location destination, Location lastPipeLocation,
@@ -247,6 +247,10 @@ public class PipeManager {
     }
 
     public void notifyBlockChanged(Location location) {
+        notifyBlockChanged(location, null);
+    }
+
+    private void notifyBlockChanged(Location location, Set<Location> refreshedDisplays) {
         BlockFace[] faces = {BlockFace.NORTH, BlockFace.SOUTH, BlockFace.EAST,
                 BlockFace.WEST, BlockFace.UP, BlockFace.DOWN};
 
@@ -258,7 +262,10 @@ public class PipeManager {
             BlockFace pipeFacing = pipeData.facing();
             boolean isCorner = pipeData.variant().getBehaviorType() == BehaviorType.CORNER;
             if (isCorner || face == pipeFacing || face == pipeFacing.getOppositeFace()) {
-                updateDisplayEntity(adjacentLoc);
+                Location normalizedAdjacent = normalizeLocation(adjacentLoc);
+                if (refreshedDisplays == null || refreshedDisplays.add(normalizedAdjacent)) {
+                    updateDisplayEntity(normalizedAdjacent);
+                }
             }
             if (pipeFacing == face.getOppositeFace()) {
                 wakeUpPipe(adjacentLoc);
@@ -1736,11 +1743,12 @@ public class PipeManager {
         }
 
         if (refreshAfterRegistration) {
+            Set<Location> refreshedDisplays = new HashSet<>(registeredLocations);
             for (Location location : registeredLocations) {
                 updateDisplayEntity(location);
             }
             for (Location location : registeredLocations) {
-                notifyBlockChanged(location);
+                notifyBlockChanged(location, refreshedDisplays);
             }
         }
 
