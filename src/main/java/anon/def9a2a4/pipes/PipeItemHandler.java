@@ -1,6 +1,6 @@
 package anon.def9a2a4.pipes;
 
-import me.xiaozhangup.carbkotlin.flexible.FlexibleItemHandler;
+import me.xiaozhangup.crab.flexible.FlexibleItemHandler;
 import org.bukkit.inventory.ItemStack;
 import org.jspecify.annotations.NonNull;
 

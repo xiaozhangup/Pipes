@@ -7,7 +7,7 @@ import anon.def9a2a4.pipes.listener.OxidationListener;
 import anon.def9a2a4.pipes.listener.PipeListener;
 import com.destroystokyo.paper.profile.PlayerProfile;
 import com.destroystokyo.paper.profile.ProfileProperty;
-import me.xiaozhangup.carbkotlin.flexible.FlexibleItem;
+import me.xiaozhangup.crab.flexible.FlexibleItem;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
 import net.kyori.adventure.text.format.TextDecoration;
