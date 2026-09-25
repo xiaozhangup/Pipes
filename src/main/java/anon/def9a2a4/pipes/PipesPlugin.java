@@ -7,7 +7,7 @@ import anon.def9a2a4.pipes.listener.OxidationListener;
 import anon.def9a2a4.pipes.listener.PipeListener;
 import com.destroystokyo.paper.profile.PlayerProfile;
 import com.destroystokyo.paper.profile.ProfileProperty;
-import me.xiaozhangup.slimecargo.utils.FlexibleItem;
+import me.xiaozhangup.carbkotlin.flexible.FlexibleItem;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
 import net.kyori.adventure.text.format.TextDecoration;
@@ -29,12 +29,18 @@ import org.bukkit.plugin.java.JavaPlugin;
 import java.io.File;
 import java.io.InputStream;
 import java.io.InputStreamReader;
+import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Stream;
 
 public class PipesPlugin extends JavaPlugin {
 
+    // Bump when display construction changes independently of config.yml/display.yml.
+    private static final String RENDER_SCHEMA = "1";
     private static PipesPlugin instance;
     private static final UUID PIPE_PROFILE_UUID = UUID.fromString("00000000-0000-0000-0000-000000000001");
 
@@ -44,12 +50,12 @@ public class PipesPlugin extends JavaPlugin {
     private final Map<String, Map<BlockFace, ItemStack>> displayItems = new HashMap<>();
     private final Map<String, Map<BlockFace, ItemStack>> directionalDisplayItems = new HashMap<>();
 
-    // Use WeakHashMap to allow worlds to be garbage collected if unloaded
-    private final WeakHashMap<World, PipeManager> pipeManager = new WeakHashMap<>();
+    private final Map<World, PipeManager> pipeManager = new ConcurrentHashMap<>();
 
     private FileConfiguration displayConfigRaw;
     private PipeConfig pipeConfig;
     private DisplayConfig displayConfig;
+    private long renderRevision;
     private VariantRegistry variantRegistry;
 //    private RecipeManager recipeManager;
     private WorldManager worldManager;
@@ -73,12 +79,12 @@ public class PipesPlugin extends JavaPlugin {
 //        recipeManager = new RecipeManager(this);
 //        recipeManager.registerRecipes();
 
+        getServer().getPluginManager().registerEvents(new PipeListener(this, pipeManager), this);
         worldManager = new WorldManager(this, pipeManager);
 //        recipeUnlockListener = new RecipeUnlockListener(this, recipeManager);
         cauldronConversionListener = new CauldronConversionListener(this);
         oxidationListener = new OxidationListener(this, pipeManager);
 //        conversionRecipeCraftListener = new ConversionRecipeCraftListener(this, recipeManager);
-        getServer().getPluginManager().registerEvents(new PipeListener(this, pipeManager), this);
         getServer().getPluginManager().registerEvents(worldManager, this);
 //        getServer().getPluginManager().registerEvents(recipeUnlockListener, this);
         getServer().getPluginManager().registerEvents(cauldronConversionListener, this);
@@ -128,8 +134,7 @@ public class PipesPlugin extends JavaPlugin {
                 loadItems();
 //                recipeManager.registerRecipes();
                 for (PipeManager manager : pipeManager.values()) {
-                    manager.refreshAllDisplays();
-                    manager.restartTasks();
+                    manager.reload();
                 }
 
                 // Re-create unlock listener with new config and sync online players
@@ -460,6 +465,19 @@ public class PipesPlugin extends JavaPlugin {
         // Load variants from config (needs displayConfig for texture-set validation)
         ConfigurationSection variantsSection = getConfig().getConfigurationSection("variants");
         variantRegistry.loadFromConfig(variantsSection, displayConfig);
+        renderRevision = calculateRenderRevision();
+    }
+
+    private long calculateRenderRevision() {
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            String displayYaml = displayConfigRaw != null ? displayConfigRaw.saveToString() : "";
+            byte[] hash = digest.digest((RENDER_SCHEMA + '\n' + getConfig().saveToString() + '\n' + displayYaml)
+                    .getBytes(StandardCharsets.UTF_8));
+            return ByteBuffer.wrap(hash).getLong();
+        } catch (NoSuchAlgorithmException e) {
+            throw new IllegalStateException("SHA-256 is not available", e);
+        }
     }
 
     public PipeConfig getPipeConfig() {
@@ -468,6 +486,10 @@ public class PipesPlugin extends JavaPlugin {
 
     public DisplayConfig getDisplayConfig() {
         return displayConfig;
+    }
+
+    public long getRenderRevision() {
+        return renderRevision;
     }
 
     public VariantRegistry getVariantRegistry() {

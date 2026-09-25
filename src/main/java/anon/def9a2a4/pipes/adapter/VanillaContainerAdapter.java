@@ -8,6 +8,7 @@ import org.bukkit.inventory.ItemStack;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.HashMap;
+import java.util.List;
 import java.util.function.Predicate;
 
 /**
@@ -21,14 +22,15 @@ public final class VanillaContainerAdapter implements ContainerAdapter {
 
     @Override
     public boolean canHandle(Block block) {
-        return block.getState() instanceof Container;
+        return ContainerAdapterRegistry.isVanillaContainer(block);
     }
 
     @Override
     public boolean hasItems(Block block) {
-        if (!(block.getState() instanceof Container container)) return false;
+        if (!(block.getState(false) instanceof Container container)) return false;
         Inventory inv = container.getInventory();
-        for (ItemStack item : inv.getContents()) {
+        for (int slot = 0; slot < inv.getSize(); slot++) {
+            ItemStack item = inv.getItem(slot);
             if (item != null && !item.getType().isAir()) return true;
         }
         return false;
@@ -36,11 +38,12 @@ public final class VanillaContainerAdapter implements ContainerAdapter {
 
     @Override
     public @Nullable ItemStack peekExtract(Block block, int maxAmount) {
-        if (!(block.getState() instanceof Container container)) return null;
+        if (!(block.getState(false) instanceof Container container)) return null;
         Inventory inv = container.getInventory();
         ItemStack template = null;
         int collected = 0;
-        for (ItemStack item : inv.getContents()) {
+        for (int slot = 0; slot < inv.getSize(); slot++) {
+            ItemStack item = inv.getItem(slot);
             if (item == null || item.getType().isAir()) continue;
             if (template == null) {
                 template = item.clone();
@@ -57,11 +60,12 @@ public final class VanillaContainerAdapter implements ContainerAdapter {
 
     @Override
     public @Nullable ItemStack peekExtract(Block block, int maxAmount, Predicate<ItemStack> filter) {
-        if (!(block.getState() instanceof Container container)) return null;
+        if (!(block.getState(false) instanceof Container container)) return null;
         Inventory inv = container.getInventory();
         ItemStack template = null;
         int collected = 0;
-        for (ItemStack item : inv.getContents()) {
+        for (int slot = 0; slot < inv.getSize(); slot++) {
+            ItemStack item = inv.getItem(slot);
             if (item == null || item.getType().isAir()) continue;
             if (template == null) {
                 ItemStack candidate = item.clone();
@@ -80,9 +84,16 @@ public final class VanillaContainerAdapter implements ContainerAdapter {
     }
 
     @Override
+    public Extraction previewExtract(Block block, int maxAmount, List<ItemStack> requested,
+                                     Predicate<ItemStack> filter) {
+        if (!(block.getState(false) instanceof Container container)) return new Extraction(null, null);
+        return Extraction.fromInventory(container.getInventory(), slot -> true, maxAmount, requested, filter);
+    }
+
+    @Override
     public void commitExtract(Block block, ItemStack extracted) {
         // 重新获取最新方块状态（保证数据最新），找到与 extracted 匹配的第一个 slot 并扣除
-        if (!(block.getState() instanceof Container container)) return;
+        if (!(block.getState(false) instanceof Container container)) return;
         Inventory inv = container.getInventory();
         int toRemove = extracted.getAmount();
         for (int i = 0; i < inv.getSize() && toRemove > 0; i++) {
@@ -103,12 +114,12 @@ public final class VanillaContainerAdapter implements ContainerAdapter {
 
     @Override
     public boolean canReceive(Block block) {
-        return block.getState() instanceof Container;
+        return canHandle(block);
     }
 
     @Override
     public @Nullable ItemStack insert(Block block, ItemStack item) {
-        if (!(block.getState() instanceof Container container)) return item;
+        if (!(block.getState(false) instanceof Container container)) return item;
         HashMap<Integer, ItemStack> leftover = container.getInventory().addItem(item.clone());
         if (leftover.isEmpty()) return null;
         return leftover.get(0);

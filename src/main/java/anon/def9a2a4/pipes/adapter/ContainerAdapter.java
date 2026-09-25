@@ -3,10 +3,12 @@ package anon.def9a2a4.pipes.adapter;
 import anon.def9a2a4.pipes.ContainerAdapterRegistry;
 import org.bukkit.block.Block;
 import org.bukkit.inventory.ItemStack;
+import org.bukkit.inventory.Inventory;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.List;
 import java.util.function.Predicate;
+import java.util.function.IntPredicate;
 
 /**
  * 自定义容器适配器接口。
@@ -16,7 +18,7 @@ import java.util.function.Predicate;
  * <p>
  * 调用顺序（每次传输）：
  * <ol>
- *   <li>source 侧：{@link #hasItems(Block)} → {@link #peekExtract(Block, int, Predicate)}</li>
+ *   <li>source 侧：{@link #previewExtract(Block, int, List, Predicate)}</li>
  *   <li>dest 侧：{@link #canReceive(Block, ItemStack)} → {@link #insert(Block, ItemStack)}</li>
  *   <li>存入成功后：{@link #commitExtract(Block, ItemStack)}</li>
  * </ol>
@@ -74,6 +76,72 @@ public interface ContainerAdapter {
         return filter.test(item) ? item : null;
     }
 
+    /** Select a requested item, retaining the first available item for fallback routing. */
+    default Extraction previewExtract(Block block, int maxAmount, List<ItemStack> requested,
+                                      Predicate<ItemStack> filter) {
+        ItemStack selected = null;
+        if (requested.isEmpty()) {
+            selected = peekExtract(block, maxAmount, filter);
+        } else {
+            for (ItemStack request : requested) {
+                selected = peekExtract(block, maxAmount, item -> item.isSimilar(request));
+                if (selected != null) break;
+            }
+        }
+        return new Extraction(selected, selected != null ? selected : peekExtract(block, maxAmount));
+    }
+
+    record Extraction(@Nullable ItemStack selected, @Nullable ItemStack fallback) {
+        static Extraction fromItem(ItemStack item, List<ItemStack> requested, Predicate<ItemStack> filter) {
+            boolean accepted = item != null && (requested.isEmpty()
+                    ? filter.test(item) : requested.stream().anyMatch(item::isSimilar));
+            return new Extraction(accepted ? item : null, item);
+        }
+
+        /** Read each eligible slot once; request order takes precedence over inventory order. */
+        static Extraction fromInventory(Inventory inventory, IntPredicate eligible, int maxAmount,
+                                        List<ItemStack> requested, Predicate<ItemStack> filter) {
+            ItemStack selected = null;
+            ItemStack fallback = null;
+            int priority = Integer.MAX_VALUE;
+            for (int slot = 0; slot < inventory.getSize(); slot++) {
+                if (!eligible.test(slot)) continue;
+                ItemStack item = inventory.getItem(slot);
+                if (item == null || item.getType().isAir() || item.getAmount() <= 0) continue;
+
+                if (fallback == null) {
+                    fallback = item.clone();
+                    fallback.setAmount(Math.min(maxAmount, item.getAmount()));
+                } else if (fallback.isSimilar(item)) {
+                    fallback.setAmount(fallback.getAmount() + Math.min(maxAmount - fallback.getAmount(), item.getAmount()));
+                }
+
+                if (selected != null && selected.isSimilar(item)) {
+                    selected.setAmount(selected.getAmount() + Math.min(maxAmount - selected.getAmount(), item.getAmount()));
+                } else if (requested.isEmpty()) {
+                    if (selected == null) {
+                        ItemStack candidate = item.clone();
+                        candidate.setAmount(Math.min(maxAmount, item.getAmount()));
+                        if (filter.test(candidate)) {
+                            selected = candidate;
+                            priority = 0;
+                        }
+                    }
+                } else {
+                    for (int rank = 0; rank < requested.size() && rank < priority; rank++) {
+                        if (!item.isSimilar(requested.get(rank))) continue;
+                        selected = item.clone();
+                        selected.setAmount(Math.min(maxAmount, item.getAmount()));
+                        priority = rank;
+                        break;
+                    }
+                }
+                if (priority == 0 && selected.getAmount() >= maxAmount) break;
+            }
+            return new Extraction(selected, fallback);
+        }
+    }
+
     /**
      * 提交提取操作，从容器中实际移除物品。
      * <p>
@@ -89,7 +157,7 @@ public interface ContainerAdapter {
      * <p>
      * 默认返回空列表，表示该容器不声明需求，管道将以默认方式（提取源中任意物品）传输。
      * 若返回非空列表，管道将按顺序尝试从源容器中提取与候选值 {@link ItemStack#isSimilar} 匹配的物品。
-     * 当源容器中没有任何匹配物品时，本次传输跳过（不进入空容器休眠状态）。
+     * 当源容器中没有匹配物品时，管道尝试备用出口；仍无法存入时进入目标阻塞休眠。
      *
      * @param block 目标方块
      * @return 期望接收的物品列表（数量字段仅作参考）；不声明需求时返回空列表

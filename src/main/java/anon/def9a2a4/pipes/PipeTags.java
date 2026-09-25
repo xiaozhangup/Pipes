@@ -7,6 +7,8 @@ import org.bukkit.block.BlockFace;
 import org.bukkit.entity.Entity;
 import org.bukkit.persistence.PersistentDataType;
 
+import java.util.Objects;
+
 /**
  * Utility class for PersistentDataContainer used to identify pipe displayx entities.
  *
@@ -14,6 +16,7 @@ import org.bukkit.persistence.PersistentDataType;
  */
 public final class PipeTags {
     public static final NamespacedKey PIPE_TAG_KEY = new NamespacedKey("pipe", "tag");
+    public static final NamespacedKey RENDER_REVISION_KEY = new NamespacedKey("pipe", "render_revision");
 
     public static final String DIRECTIONAL_SUFFIX = "_dir";
     public static final String HEAD_DISPLAY_SUFFIX = "_head";
@@ -77,7 +80,19 @@ public final class PipeTags {
      * Add a pipe tag to an entity, replacing any existing pipe tag.
      */
     public static void addPipeTag(Entity entity, String newTag) {
-        entity.getPersistentDataContainer().set(PIPE_TAG_KEY, PersistentDataType.STRING, newTag);
+        if (!Objects.equals(getPipeTag(entity), newTag)) {
+            entity.getPersistentDataContainer().set(PIPE_TAG_KEY, PersistentDataType.STRING, newTag);
+        }
+    }
+
+    public static Long getRenderRevision(Entity entity) {
+        return entity.getPersistentDataContainer().get(RENDER_REVISION_KEY, PersistentDataType.LONG);
+    }
+
+    public static void setRenderRevision(Entity entity, long revision) {
+        if (!Objects.equals(getRenderRevision(entity), revision)) {
+            entity.getPersistentDataContainer().set(RENDER_REVISION_KEY, PersistentDataType.LONG, revision);
+        }
     }
 
     /**
@@ -85,34 +100,8 @@ public final class PipeTags {
      * Returns null if the tag doesn't match the expected format.
      */
     public static String parseVariantId(String tag) {
-        if (tag == null) return null;
-
-        String workingTag = stripDisplaySuffix(tag);
-
-        // Format: {variant_id}:{data}
-        int colonIdx = workingTag.indexOf(':');
-        if (colonIdx > 0) {
-            return workingTag.substring(0, colonIdx);
-        }
-
-        return null;
-    }
-
-    /**
-     * Get the data portion of a tag (coordinates and facing).
-     */
-    private static String getTagData(String tag) {
-        if (tag == null) return null;
-
-        String workingTag = stripDisplaySuffix(tag);
-
-        // Format: {variant_id}:{data}
-        int colonIdx = workingTag.indexOf(':');
-        if (colonIdx > 0 && colonIdx < workingTag.length() - 1) {
-            return workingTag.substring(colonIdx + 1);
-        }
-
-        return null;
+        ParsedTag parsed = parse(tag);
+        return parsed != null ? parsed.variantId() : null;
     }
 
     /**
@@ -120,20 +109,8 @@ public final class PipeTags {
      * Returns null if parsing fails.
      */
     public static Location parseLocation(String tag, World world) {
-        String data = getTagData(tag);
-        if (data == null) return null;
-
-        String[] parts = data.split("_");
-        if (parts.length != 4) return null;
-
-        try {
-            int x = Integer.parseInt(parts[0]);
-            int y = Integer.parseInt(parts[1]);
-            int z = Integer.parseInt(parts[2]);
-            return new Location(world, x, y, z);
-        } catch (NumberFormatException e) {
-            return null;
-        }
+        ParsedTag parsed = parse(tag);
+        return parsed != null ? parsed.location(world) : null;
     }
 
     /**
@@ -141,14 +118,32 @@ public final class PipeTags {
      * Returns null if parsing fails.
      */
     public static BlockFace parseFacing(String tag) {
-        String data = getTagData(tag);
-        if (data == null) return null;
+        ParsedTag parsed = parse(tag);
+        return parsed != null ? parsed.facing() : null;
+    }
 
-        String[] parts = data.split("_");
+    public static ParsedTag parse(String tag) {
+        if (tag == null) return null;
+
+        boolean directional = isDirectionalTag(tag);
+        boolean headDisplay = isHeadDisplayTag(tag);
+        String workingTag = stripDisplaySuffix(tag);
+        int colonIdx = workingTag.indexOf(':');
+        if (colonIdx <= 0 || colonIdx == workingTag.length() - 1) return null;
+
+        String[] parts = workingTag.substring(colonIdx + 1).split("_", 4);
         if (parts.length != 4) return null;
 
         try {
-            return BlockFace.valueOf(parts[3]);
+            return new ParsedTag(
+                    workingTag.substring(0, colonIdx),
+                    Integer.parseInt(parts[0]),
+                    Integer.parseInt(parts[1]),
+                    Integer.parseInt(parts[2]),
+                    BlockFace.valueOf(parts[3]),
+                    directional,
+                    headDisplay
+            );
         } catch (IllegalArgumentException e) {
             return null;
         }
@@ -158,12 +153,12 @@ public final class PipeTags {
      * Check if a pipe tag matches the given location.
      */
     public static boolean matchesLocation(String tag, Location location) {
-        Location parsed = parseLocation(tag, location.getWorld());
+        ParsedTag parsed = parse(tag);
         if (parsed == null) return false;
 
-        return parsed.getBlockX() == location.getBlockX() &&
-                parsed.getBlockY() == location.getBlockY() &&
-                parsed.getBlockZ() == location.getBlockZ();
+        return parsed.x() == location.getBlockX() &&
+                parsed.y() == location.getBlockY() &&
+                parsed.z() == location.getBlockZ();
     }
 
     private static String stripDisplaySuffix(String tag) {
@@ -175,5 +170,16 @@ public final class PipeTags {
             return tag.substring(0, tag.length() - HEAD_DISPLAY_SUFFIX.length());
         }
         return tag;
+    }
+
+    public record ParsedTag(String variantId, int x, int y, int z, BlockFace facing,
+                            boolean directional, boolean headDisplay) {
+        public Location location(World world) {
+            return new Location(world, x, y, z);
+        }
+
+        public boolean mainDisplay() {
+            return !directional && !headDisplay;
+        }
     }
 }

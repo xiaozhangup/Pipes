@@ -2,6 +2,8 @@ package anon.def9a2a4.pipes.config;
 
 import org.bukkit.configuration.file.FileConfiguration;
 
+import java.util.concurrent.TimeUnit;
+
 /**
  * Global configuration from config.yml.
  * Note: Per-variant transfer settings are now in the variants section
@@ -15,6 +17,7 @@ public class PipeConfig {
     private final long sourceEmptySleepMs;
     private final long destFullSleepMs;
     private final long endRecheckSleepMs;
+    private final long displayUpdateBudgetNanos;
 
     // Recipe unlock settings
     private final String unlockAdvancement;
@@ -32,6 +35,8 @@ public class PipeConfig {
         this.sourceEmptySleepMs = sourceEmptyTicks * 50L;
         this.destFullSleepMs = destFullTicks * 50L;
         this.endRecheckSleepMs = endRecheckTicks * 50L;
+        this.displayUpdateBudgetNanos = TimeUnit.MICROSECONDS.toNanos(Math.max(0L,
+                config.getLong("global.performance.display-update-budget-micros", 750L)));
 
         // Recipe unlock settings
         this.unlockAdvancement = config.getString("recipes.unlock-advancement", "minecraft:story/smelt_iron");
@@ -57,6 +62,10 @@ public class PipeConfig {
 
     public long getEndRecheckSleepMs() {
         return endRecheckSleepMs;
+    }
+
+    public long getDisplayUpdateBudgetNanos() {
+        return displayUpdateBudgetNanos;
     }
 
     public String getUnlockAdvancement() {

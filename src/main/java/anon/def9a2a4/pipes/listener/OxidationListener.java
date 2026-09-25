@@ -21,7 +21,6 @@ import org.bukkit.scheduler.BukkitTask;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Random;
-import java.util.WeakHashMap;
 
 /**
  * 处理铜管的随机氧化、涂蜡（蜜脾右键）和打磨（斧头右键）机制，
@@ -30,7 +29,7 @@ import java.util.WeakHashMap;
 public class OxidationListener implements Listener {
 
     private final PipesPlugin plugin;
-    private final WeakHashMap<World, PipeManager> pipeManagerMap;
+    private final Map<World, PipeManager> pipeManagerMap;
     private final Random random = new Random();
 
     // 配置加载后填充
@@ -46,7 +45,7 @@ public class OxidationListener implements Listener {
 
     private BukkitTask oxidationTask;
 
-    public OxidationListener(PipesPlugin plugin, WeakHashMap<World, PipeManager> pipeManagerMap) {
+    public OxidationListener(PipesPlugin plugin, Map<World, PipeManager> pipeManagerMap) {
         this.plugin = plugin;
         this.pipeManagerMap = pipeManagerMap;
         loadConfig();

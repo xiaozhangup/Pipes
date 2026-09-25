@@ -25,7 +25,7 @@ repositories {
 
 dependencies {
     compileOnly("me.xiaozhangup.octopus:octopus-api:26.2-R0.1-SNAPSHOT")
-    compileOnly("me.xiaozhangup:SlimeCargoNext:1.0.2")
+    compileOnly("me.xiaozhangup.crab:CarbKotlin:2.3.20:paper") { isTransitive = false }
     compileOnly(kotlin("stdlib"))
 }
 
@@ -45,6 +45,7 @@ tasks {
             attributes["paperweight-mappings-namespace"] = "mojang"
         }
     }
+
 }
 
 publishing {

@@ -7,14 +7,14 @@ import org.bukkit.event.Listener;
 import org.bukkit.event.world.WorldLoadEvent;
 import org.bukkit.event.world.WorldUnloadEvent;
 
-import java.util.WeakHashMap;
+import java.util.Map;
 
 public class WorldManager implements Listener {
 
     private final PipesPlugin plugin;
-    private final WeakHashMap<World, PipeManager> pipeManager;
+    private final Map<World, PipeManager> pipeManager;
 
-    public WorldManager(PipesPlugin plugin, WeakHashMap<World, PipeManager> pipeManager) {
+    public WorldManager(PipesPlugin plugin, Map<World, PipeManager> pipeManager) {
         this.plugin = plugin;
         this.pipeManager = pipeManager;
 

@@ -7,6 +7,7 @@ import org.bukkit.inventory.ItemStack;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.List;
+import java.util.function.Predicate;
 
 /**
  * 熔炉类容器适配器（熔炉、高炉、烟熏炉）。
@@ -22,19 +23,22 @@ public class FurnaceContainerAdapter implements ContainerAdapter {
 
     @Override
     public boolean canHandle(Block block) {
-        return block.getState() instanceof Furnace;
+        return switch (block.getType()) {
+            case FURNACE, BLAST_FURNACE, SMOKER -> true;
+            default -> false;
+        };
     }
 
     @Override
     public boolean hasItems(Block block) {
-        if (!(block.getState() instanceof Furnace furnace)) return false;
+        if (!(block.getState(false) instanceof Furnace furnace)) return false;
         ItemStack result = furnace.getInventory().getResult();
         return result != null && !result.getType().isAir();
     }
 
     @Override
     public @Nullable ItemStack peekExtract(Block block, int maxAmount) {
-        if (!(block.getState() instanceof Furnace furnace)) return null;
+        if (!(block.getState(false) instanceof Furnace furnace)) return null;
         ItemStack result = furnace.getInventory().getResult();
         if (result == null || result.getType().isAir()) return null;
         ItemStack copy = result.clone();
@@ -43,8 +47,14 @@ public class FurnaceContainerAdapter implements ContainerAdapter {
     }
 
     @Override
+    public Extraction previewExtract(Block block, int maxAmount, List<ItemStack> requested,
+                                     Predicate<ItemStack> filter) {
+        return Extraction.fromItem(peekExtract(block, maxAmount), requested, filter);
+    }
+
+    @Override
     public void commitExtract(Block block, ItemStack extracted) {
-        if (!(block.getState() instanceof Furnace furnace)) return;
+        if (!(block.getState(false) instanceof Furnace furnace)) return;
         FurnaceInventory inv = furnace.getInventory();
         ItemStack result = inv.getResult();
         if (result == null || result.getType().isAir()) return;
@@ -64,7 +74,7 @@ public class FurnaceContainerAdapter implements ContainerAdapter {
      */
     @Override
     public List<ItemStack> requestedItems(Block block) {
-        if (!(block.getState() instanceof Furnace furnace)) return List.of();
+        if (!(block.getState(false) instanceof Furnace furnace)) return List.of();
         FurnaceInventory inv = furnace.getInventory();
         ItemStack smelting = inv.getSmelting();
         if (smelting != null && !smelting.getType().isAir()) {
@@ -82,12 +92,12 @@ public class FurnaceContainerAdapter implements ContainerAdapter {
 
     @Override
     public boolean canReceive(Block block) {
-        return block.getState() instanceof Furnace;
+        return canHandle(block);
     }
 
     @Override
     public @Nullable ItemStack insert(Block block, ItemStack item) {
-        if (!(block.getState() instanceof Furnace furnace)) return item;
+        if (!(block.getState(false) instanceof Furnace furnace)) return item;
         FurnaceInventory inv = furnace.getInventory();
 
         // 燃料格（slot 1）

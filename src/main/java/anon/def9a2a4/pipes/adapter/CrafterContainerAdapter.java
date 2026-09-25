@@ -22,12 +22,12 @@ public class CrafterContainerAdapter implements ContainerAdapter {
 
     @Override
     public boolean canHandle(Block block) {
-        return block.getState() instanceof Crafter;
+        return block.getType() == org.bukkit.Material.CRAFTER;
     }
 
     @Override
     public boolean hasItems(Block block) {
-        if (!(block.getState() instanceof Crafter crafter)) return false;
+        if (!(block.getState(false) instanceof Crafter crafter)) return false;
         Inventory inv = crafter.getInventory();
         for (int i = 0; i < SLOT_COUNT; i++) {
             if (crafter.isSlotDisabled(i)) continue;
@@ -39,7 +39,7 @@ public class CrafterContainerAdapter implements ContainerAdapter {
 
     @Override
     public @Nullable ItemStack peekExtract(Block block, int maxAmount) {
-        if (!(block.getState() instanceof Crafter crafter)) return null;
+        if (!(block.getState(false) instanceof Crafter crafter)) return null;
         Inventory inv = crafter.getInventory();
         ItemStack template = null;
         int collected = 0;
@@ -62,7 +62,7 @@ public class CrafterContainerAdapter implements ContainerAdapter {
 
     @Override
     public @Nullable ItemStack peekExtract(Block block, int maxAmount, Predicate<ItemStack> filter) {
-        if (!(block.getState() instanceof Crafter crafter)) return null;
+        if (!(block.getState(false) instanceof Crafter crafter)) return null;
         Inventory inv = crafter.getInventory();
         ItemStack template = null;
         int collected = 0;
@@ -87,8 +87,16 @@ public class CrafterContainerAdapter implements ContainerAdapter {
     }
 
     @Override
+    public Extraction previewExtract(Block block, int maxAmount, List<ItemStack> requested,
+                                     Predicate<ItemStack> filter) {
+        if (!(block.getState(false) instanceof Crafter crafter)) return new Extraction(null, null);
+        return Extraction.fromInventory(crafter.getInventory(), slot -> !crafter.isSlotDisabled(slot),
+                maxAmount, requested, filter);
+    }
+
+    @Override
     public void commitExtract(Block block, ItemStack extracted) {
-        if (!(block.getState() instanceof Crafter crafter)) return;
+        if (!(block.getState(false) instanceof Crafter crafter)) return;
         Inventory inv = crafter.getInventory();
         int toRemove = extracted.getAmount();
         for (int i = 0; i < SLOT_COUNT && toRemove > 0; i++) {
@@ -114,7 +122,7 @@ public class CrafterContainerAdapter implements ContainerAdapter {
      */
     @Override
     public List<ItemStack> requestedItems(Block block) {
-        if (!(block.getState() instanceof Crafter crafter)) return List.of();
+        if (!(block.getState(false) instanceof Crafter crafter)) return List.of();
         Inventory inv = crafter.getInventory();
         List<ItemStack> requested = new ArrayList<>();
         for (int i = 0; i < SLOT_COUNT; i++) {
@@ -129,7 +137,7 @@ public class CrafterContainerAdapter implements ContainerAdapter {
 
     @Override
     public boolean canReceive(Block block) {
-        if (!(block.getState() instanceof Crafter crafter)) return false;
+        if (!(block.getState(false) instanceof Crafter crafter)) return false;
         Inventory inv = crafter.getInventory();
         for (int i = 0; i < SLOT_COUNT; i++) {
             if (crafter.isSlotDisabled(i)) continue;
@@ -143,7 +151,7 @@ public class CrafterContainerAdapter implements ContainerAdapter {
 
     @Override
     public boolean canReceive(Block block, ItemStack item) {
-        if (!(block.getState() instanceof Crafter crafter)) return false;
+        if (!(block.getState(false) instanceof Crafter crafter)) return false;
         Inventory inv = crafter.getInventory();
         for (int i = 0; i < SLOT_COUNT; i++) {
             if (crafter.isSlotDisabled(i)) continue;
@@ -158,7 +166,7 @@ public class CrafterContainerAdapter implements ContainerAdapter {
 
     @Override
     public @Nullable ItemStack insert(Block block, ItemStack item) {
-        if (!(block.getState() instanceof Crafter crafter)) return item;
+        if (!(block.getState(false) instanceof Crafter crafter)) return item;
         Inventory inv = crafter.getInventory();
         ItemStack leftover = item.clone();
 

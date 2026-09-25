@@ -7,6 +7,7 @@ import org.bukkit.inventory.ItemStack;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.List;
+import java.util.function.Predicate;
 
 /**
  * 酿造台容器适配器。
@@ -30,12 +31,12 @@ public class BrewingStandContainerAdapter implements ContainerAdapter {
 
     @Override
     public boolean canHandle(Block block) {
-        return block.getState() instanceof BrewingStand;
+        return block.getType() == org.bukkit.Material.BREWING_STAND;
     }
 
     @Override
     public boolean hasItems(Block block) {
-        if (!(block.getState() instanceof BrewingStand stand)) return false;
+        if (!(block.getState(false) instanceof BrewingStand stand)) return false;
         if (stand.getBrewingTime() > 0) return false;
         BrewerInventory inv = stand.getInventory();
         for (int i = 0; i < BOTTLE_SLOTS; i++) {
@@ -47,7 +48,7 @@ public class BrewingStandContainerAdapter implements ContainerAdapter {
 
     @Override
     public @Nullable ItemStack peekExtract(Block block, int maxAmount) {
-        if (!(block.getState() instanceof BrewingStand stand)) return null;
+        if (!(block.getState(false) instanceof BrewingStand stand)) return null;
         if (stand.getBrewingTime() > 0) return null;
         BrewerInventory inv = stand.getInventory();
         ItemStack template = null;
@@ -69,8 +70,14 @@ public class BrewingStandContainerAdapter implements ContainerAdapter {
     }
 
     @Override
+    public Extraction previewExtract(Block block, int maxAmount, List<ItemStack> requested,
+                                     Predicate<ItemStack> filter) {
+        return Extraction.fromItem(peekExtract(block, maxAmount), requested, filter);
+    }
+
+    @Override
     public void commitExtract(Block block, ItemStack extracted) {
-        if (!(block.getState() instanceof BrewingStand stand)) return;
+        if (!(block.getState(false) instanceof BrewingStand stand)) return;
         BrewerInventory inv = stand.getInventory();
         int toRemove = extracted.getAmount();
         for (int i = 0; i < BOTTLE_SLOTS && toRemove > 0; i++) {
@@ -95,7 +102,7 @@ public class BrewingStandContainerAdapter implements ContainerAdapter {
      */
     @Override
     public List<ItemStack> requestedItems(Block block) {
-        if (!(block.getState() instanceof BrewingStand stand)) return List.of();
+        if (!(block.getState(false) instanceof BrewingStand stand)) return List.of();
         BrewerInventory inv = stand.getInventory();
         ItemStack ingredient = inv.getItem(INGREDIENT_SLOT);
         if (ingredient != null && !ingredient.getType().isAir() && ingredient.getAmount() < ingredient.getMaxStackSize()) {
@@ -110,12 +117,12 @@ public class BrewingStandContainerAdapter implements ContainerAdapter {
 
     @Override
     public boolean canReceive(Block block) {
-        return block.getState() instanceof BrewingStand;
+        return canHandle(block);
     }
 
     @Override
     public @Nullable ItemStack insert(Block block, ItemStack item) {
-        if (!(block.getState() instanceof BrewingStand stand)) return item;
+        if (!(block.getState(false) instanceof BrewingStand stand)) return item;
         BrewerInventory inv = stand.getInventory();
 
         // 先尝试原料格（slot 3）

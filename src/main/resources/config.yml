@@ -23,6 +23,9 @@ global:
     particle-interval: 10
 
   performance:
+    # 区块加载后的展示修复每世界每 tick 最多占用多少微秒
+    # 设为 0 取消时间限制
+    display-update-budget-micros: 750
     sleep:
       # 源容器为空时，该管道暂停检测的时长（ticks，20 ticks = 1 秒）
       # 设为 0 禁用此优化

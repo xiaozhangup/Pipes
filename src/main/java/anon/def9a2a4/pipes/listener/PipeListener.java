@@ -19,8 +19,8 @@ import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
 import org.bukkit.event.block.*;
 import org.bukkit.event.entity.EntityExplodeEvent;
-import org.bukkit.event.world.ChunkLoadEvent;
-import org.bukkit.event.world.ChunkUnloadEvent;
+import org.bukkit.event.world.EntitiesLoadEvent;
+import org.bukkit.event.world.EntitiesUnloadEvent;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.SkullMeta;
 import org.bukkit.util.Vector;
@@ -31,10 +31,10 @@ import java.util.stream.Collectors;
 public class PipeListener implements Listener {
 
     private final PipesPlugin plugin;
-    private final WeakHashMap<World, PipeManager> pipeManager;
+    private final Map<World, PipeManager> pipeManager;
     private final Random random = new Random();
 
-    public PipeListener(PipesPlugin plugin, WeakHashMap<World, PipeManager> pipeManager) {
+    public PipeListener(PipesPlugin plugin, Map<World, PipeManager> pipeManager) {
         this.plugin = plugin;
         this.pipeManager = pipeManager;
     }
@@ -130,18 +130,23 @@ public class PipeListener implements Listener {
                 }
             }
 
-            // Delay texture update for ALL pipes to ensure block state is fully initialized
-            // Use runTaskLater with 2 ticks - runTask can execute same tick which isn't enough
-            Location loc = block.getLocation();
-            BlockFace finalFacing = facing;
-            Bukkit.getScheduler().runTaskLater(plugin, () -> {
-                updatePlacedSkullTexture(loc.getBlock(), variant, finalFacing);
-            }, 2L);
-
             PipeManager manager = pipeManager.get(block.getWorld());
             if (manager == null) {
                 throw new IllegalStateException("PipeManager not found for world: " + block.getWorld().getName());
             }
+
+            // Delay texture update for ALL pipes to ensure block state is fully initialized
+            // Use runTaskLater with 2 ticks - runTask can execute same tick which isn't enough
+            Location loc = block.getLocation();
+            BlockFace finalFacing = facing;
+            Bukkit.getScheduler().runTaskLater(plugin, () -> block.getWorld().submitScopedTask(() -> {
+                PipeData current = manager.getPipeData(loc);
+                if (current == null || current.facing() != finalFacing
+                        || !current.variant().getId().equals(variant.getId())) return;
+                if (updatePlacedSkullTexture(loc.getBlock(), variant, finalFacing)) {
+                    manager.markDisplayRevision(loc);
+                }
+            }), 2L);
 
             List<ItemDisplay> displays = manager.spawnDisplayEntities(block.getLocation(), facing, variant);
             List<UUID> displayIds = displays.stream()
@@ -160,16 +165,17 @@ public class PipeListener implements Listener {
         updateAdjacentPipes(block.getLocation());
     }
 
-    private void updatePlacedSkullTexture(Block block, PipeVariant variant, BlockFace facing) {
+    private boolean updatePlacedSkullTexture(Block block, PipeVariant variant, BlockFace facing) {
         // Get fresh state from world - important after setType() which resets skull state
         Block freshBlock = block.getWorld().getBlockAt(block.getLocation());
         if (freshBlock.getState() instanceof Skull skull) {
             ItemStack directionItem = plugin.getHeadItemForDirection(variant, facing);
             if (directionItem != null && directionItem.getItemMeta() instanceof SkullMeta skullMeta) {
                 skull.setOwnerProfile(skullMeta.getOwnerProfile());
-                skull.update(true, false); // force=true, applyPhysics=false
+                return skull.update(true, false); // force=true, applyPhysics=false
             }
         }
+        return false;
     }
 
     @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
@@ -334,24 +340,17 @@ public class PipeListener implements Listener {
         }
     }
 
-    // ========== Chunk Handlers ==========
+    // ========== Chunk entity lifecycle ==========
 
     @EventHandler
-    public void onChunkLoad(ChunkLoadEvent event) {
-        // Schedule for next tick to ensure entities are fully loaded
+    public void onEntitiesLoad(EntitiesLoadEvent event) {
         PipeManager manager = pipeManager.get(event.getWorld());
-        if (manager == null) {
-            throw new IllegalStateException("PipeManager not found for world: " + event.getWorld().getName());
-        }
-        Bukkit.getScheduler().runTask(plugin, () -> manager.scanChunk(event.getChunk()));
+        if (manager != null) manager.loadEntities(event.getChunk(), event.getEntities());
     }
 
     @EventHandler
-    public void onChunkUnload(ChunkUnloadEvent event) {
+    public void onEntitiesUnload(EntitiesUnloadEvent event) {
         PipeManager manager = pipeManager.get(event.getWorld());
-        if (manager == null) {
-            throw new IllegalStateException("PipeManager not found for world: " + event.getWorld().getName());
-        }
-        manager.unloadPipesInChunk(event.getChunk());
+        if (manager != null) manager.unloadEntities(event.getChunk());
     }
 }

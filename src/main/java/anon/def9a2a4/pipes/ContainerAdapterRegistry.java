@@ -13,6 +13,8 @@ import org.bukkit.block.BrewingStand;
 import org.bukkit.block.Container;
 import org.bukkit.block.Crafter;
 import org.bukkit.block.Furnace;
+import org.bukkit.block.BlockFace;
+import org.bukkit.block.data.type.Chest;
 
 import java.util.ArrayList;
 import java.util.EnumMap;
@@ -73,6 +75,7 @@ public final class ContainerAdapterRegistry {
      * @return 能处理该方块的适配器，可能为空
      */
     public static Optional<ContainerAdapter> findAdapter(Block block) {
+        if (!isInventoryLoaded(block)) return Optional.empty();
         for (ContainerAdapter adapter : adapters) {
             if (adapter.canHandle(block)) {
                 return Optional.of(adapter);
@@ -84,6 +87,24 @@ public final class ContainerAdapterRegistry {
             adapter = SHULKER_BOX;
         }
         return Optional.ofNullable(adapter);
+    }
+
+    /** Double-chest inventory lookup also reads its other half. Never load that chunk implicitly. */
+    public static boolean isInventoryLoaded(Block block) {
+        var world = block.getWorld();
+        if (!world.isChunkLoaded(block.getX() >> 4, block.getZ() >> 4)) return false;
+        if (block.getType().name().endsWith("CHEST") && block.getBlockData() instanceof Chest chest
+                && chest.getType() != Chest.Type.SINGLE) {
+            BlockFace facing = chest.getFacing();
+            int side = chest.getType() == Chest.Type.LEFT ? 1 : -1;
+            return world.isChunkLoaded((block.getX() - facing.getModZ() * side) >> 4,
+                    (block.getZ() + facing.getModX() * side) >> 4);
+        }
+        return true;
+    }
+
+    public static boolean isVanillaContainer(Block block) {
+        return VANILLA.containsKey(block.getType());
     }
 
     private static Map<Material, ContainerAdapter> createVanillaAdapters() {
