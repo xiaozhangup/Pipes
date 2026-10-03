@@ -24,7 +24,7 @@ repositories {
 }
 
 dependencies {
-    compileOnly("me.xiaozhangup.octopus:octopus-api:26.2-R0.1-SNAPSHOT")
+    compileOnly("me.xiaozhangup.octopus:octopus-api:26.3-R0.1-SNAPSHOT")
     compileOnly("me.xiaozhangup.crab:CrabKotlin:2.3.20:paper") { isTransitive = false }
     compileOnly(kotlin("stdlib"))
 }
