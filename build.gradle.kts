@@ -6,7 +6,7 @@ plugins {
 }
 
 group = "anon.def9a2a4"
-version = "0.1.5"
+version = "0.1.6"
 
 java {
     toolchain {
@@ -65,5 +65,5 @@ publishing {
 sftpUploader {
     host.set("xiaozhangup@s1.dimc.cloud")
     target.set("Minecraft")
-    jars.set(listOf(layout.buildDirectory.file("libs/Pipes-0.1.5.jar").get().asFile.absolutePath))
+    jars.set(listOf(layout.buildDirectory.file("libs/Pipes-${project.version}.jar").get().asFile.absolutePath))
 }
