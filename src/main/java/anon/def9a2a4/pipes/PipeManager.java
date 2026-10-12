@@ -33,6 +33,8 @@ public class PipeManager {
         }
     }
 
+    private record CornerEntry(Location location, BlockFace incomingFace) {}
+
     private final PipesPlugin plugin;
     private final int offset;
     private final World world;
@@ -317,8 +319,8 @@ public class PipeManager {
 
     /**
      * 计算转角管道所有活跃输出方向：主输出方向始终包含，
-     * 其余方向若有可接收的容器或朝向匹配的普通管道则也包含。
-     * 侧向不自动接入另一个转角管道，避免两个转角紧挨时材质互相交融。
+     * 其余方向按传输规则接入可接收的容器、普通管道或转角管道。
+     * 两个转角的侧面可以双向传输时，两端都按输出端绘制。
      */
     private List<BlockFace> getCornerActiveOutputFaces(Location cornerLoc, BlockFace primaryFacing) {
         List<BlockFace> faces = new ArrayList<>();
@@ -342,7 +344,7 @@ public class PipeManager {
             }
 
             PipeData adjPipe = getPipeData(adjacent.getLocation());
-            if (adjPipe != null && canRouteIntoAdjacentPipe(face, adjPipe, false)) {
+            if (adjPipe != null && canRouteIntoAdjacentPipe(face, adjPipe)) {
                 faces.add(face);
             }
         }
@@ -350,15 +352,8 @@ public class PipeManager {
     }
 
     private boolean canRouteIntoAdjacentPipe(BlockFace directionToAdjacent, PipeData adjacentPipeData) {
-        return canRouteIntoAdjacentPipe(directionToAdjacent, adjacentPipeData, true);
-    }
-
-    private boolean canRouteIntoAdjacentPipe(BlockFace directionToAdjacent, PipeData adjacentPipeData, boolean allowCornerPipe) {
         if (adjacentPipeData.variant().getBehaviorType() == BehaviorType.REGULAR) {
             return adjacentPipeData.facing() == directionToAdjacent;
-        }
-        if (!allowCornerPipe) {
-            return false;
         }
         return adjacentPipeData.facing() != directionToAdjacent.getOppositeFace();
     }
@@ -545,9 +540,6 @@ public class PipeManager {
                 return false;
             }
             ItemStack remaining = tryCornerJunctionAlternatives(path, anyItem);
-            if (remaining != null && remaining.getAmount() > 0) {
-                remaining = tryAlternativeDestination(path.lastPipeLocation(), path.destination(), remaining);
-            }
             int remainingAmount = remaining == null ? 0 : Math.max(0, remaining.getAmount());
             int insertedAmount = anyItem.getAmount() - remainingAmount;
             if (insertedAmount > 0) {
@@ -565,9 +557,6 @@ public class PipeManager {
         if (path.destination() == null) {
             // 无容器目的地时，先尝试转角节点的备用输出
             ItemStack remaining = tryCornerJunctionAlternatives(path, toTransfer);
-            if (remaining != null && remaining.getAmount() > 0) {
-                remaining = tryAlternativeDestination(path.lastPipeLocation(), null, remaining);
-            }
 
             int remainingAmount = (remaining == null) ? 0 : Math.max(0, remaining.getAmount());
             int insertedAmount = toTransfer.getAmount() - remainingAmount;
@@ -636,9 +625,6 @@ public class PipeManager {
                 } else {
                     // 完全无法插入，尝试备用输出
                     ItemStack remaining = tryCornerJunctionAlternatives(path, toTransfer);
-                    if (remaining != null && remaining.getAmount() > 0) {
-                        remaining = tryAlternativeDestination(path.lastPipeLocation(), path.destination(), remaining);
-                    }
 
                     int remainingAmount = (remaining == null) ? 0 : Math.max(0, remaining.getAmount());
                     int altInsertedAmount = toTransfer.getAmount() - remainingAmount;
@@ -695,41 +681,34 @@ public class PipeManager {
      * @return 剩余未插入的物品；若全部插入则返回 {@code null}
      */
     private ItemStack tryCornerJunctionAlternatives(CachedPath path, ItemStack item) {
-        return tryCornerJunctionAlternatives(path, item, new HashSet<>(), 0);
+        // 主路径从普通提取管道开始，首节点不会参与转角分流。
+        return tryCornerJunctionAlternatives(path, item, null, new HashSet<>(), 0);
     }
 
     private ItemStack tryCornerJunctionAlternatives(CachedPath path, ItemStack item,
-                                                    Set<Location> visitedTails, int depth) {
+                                                    BlockFace firstIncomingFace,
+                                                    Set<CornerEntry> visitedEntries, int depth) {
         if (item == null || item.getAmount() <= 0) return null;
         if (depth > MAX_FALLBACK_DEPTH) return item;
 
-        Location currentTail = normalizeLocation(path.lastPipeLocation());
-        if (!visitedTails.add(currentTail)) return item;
-
         ItemStack remaining = item.clone();
         List<Location> chain = path.pipeChain();
-        for (int i = 1; i < chain.size(); i++) {
+        Set<Location> baseVisited = new HashSet<>(chain);
+        for (int i = 0; i < chain.size(); i++) {
             if (remaining.getAmount() <= 0) return null;
 
             Location loc = chain.get(i);
             PipeData pipeData = getPipeData(loc);
             if (pipeData == null || pipeData.variant().getBehaviorType() != BehaviorType.CORNER) continue;
 
-            // 推断物品入流方向：上一节点的朝向即为物品的行进方向，
-            // 从转角管道视角看，入流面 = 行进方向的反方向
-            PipeData prevPipeData = getPipeData(chain.get(i - 1));
-            if (prevPipeData == null) continue;
-            // 物品行进方向 = prevPipeData.facing()；入流面（要跳过）= 行进方向的反面
-            BlockFace skipIncoming = prevPipeData.facing().getOppositeFace();
-            BlockFace primaryOut = pipeData.facing(); // 主输出已尝试过，跳过
-
             Block cornerBlock = loc.getBlock();
-            // 以链条内所有位置作为初始 visited，避免循环
-            Set<Location> baseVisited = new HashSet<>(chain);
+            // 新分支的首个转角也需要分流；其来向由实际跨入的那一面传递。
+            BlockFace skipIncoming = i == 0 ? firstIncomingFace
+                    : cornerBlock.getFace(chain.get(i - 1).getBlock());
+            if (!visitedEntries.add(new CornerEntry(loc, skipIncoming))) continue;
+            BlockFace primaryOut = pipeData.facing(); // 整条主路已尝试过，跳过
 
-            for (BlockFace face : new BlockFace[]{
-                    BlockFace.NORTH, BlockFace.SOUTH, BlockFace.EAST,
-                    BlockFace.WEST, BlockFace.UP, BlockFace.DOWN}) {
+            for (BlockFace face : ADJACENT_FACES) {
                 if (face == skipIncoming) continue;
                 if (face == primaryOut) continue;
 
@@ -746,13 +725,13 @@ public class PipeManager {
                     continue;
                 }
 
-                // 再尝试相邻普通管道（沿该管道继续寻路）
+                // 再尝试相邻管道，包括可从当前方向接入的转角管道。
                 PipeData adjPipeData = getPipeData(adjLoc);
                 if (adjPipeData == null) continue;
-                if (!canRouteIntoAdjacentPipe(face, adjPipeData, false)) continue;
+                if (!canRouteIntoAdjacentPipe(face, adjPipeData)) continue;
+                if (baseVisited.contains(adjLoc)) continue;
 
                 Set<Location> visited = new HashSet<>(baseVisited);
-                visited.add(loc); // 标记转角自身，防止重入
                 CachedPath altPath = findDestination(adjLoc, adjPipeData.facing(), visited, new ArrayList<>(), Integer.MAX_VALUE);
                 if (altPath.unavailableBlock() != null) continue;
 
@@ -767,111 +746,13 @@ public class PipeManager {
                 }
 
                 if (branchRemaining != null && branchRemaining.getAmount() > 0) {
-                    branchRemaining = tryCornerJunctionAlternatives(altPath, branchRemaining, visitedTails, depth + 1);
-                }
-                if (branchRemaining != null && branchRemaining.getAmount() > 0) {
-                    branchRemaining = tryAlternativeDestination(
-                            altPath.lastPipeLocation(), altPath.destination(), branchRemaining, visitedTails, depth + 1);
+                    branchRemaining = tryCornerJunctionAlternatives(
+                            altPath, branchRemaining, face.getOppositeFace(), visitedEntries, depth + 1);
                 }
 
                 if (branchRemaining == null || branchRemaining.getAmount() <= 0) return null;
                 remaining = branchRemaining;
             }
-        }
-        return remaining;
-    }
-
-    /**
-     * 优先级分流：主目标不可用时，尝试链条末端周围的相邻容器或相邻管道分支。
-     * <p>
-     * 按 NORTH → SOUTH → EAST → WEST → UP → DOWN 固定顺序依次尝试，
-     * 若相邻方块是管道，则沿该分支继续寻路到可接收容器。
-     *
-     * @param lastPipeLoc 链条末端管道的位置
-     * @param primaryDest 主目标位置（已满，跳过）
-     * @param item        待传输的物品
-     * @return 剩余未插入的物品；若全部插入则返回 {@code null}
-     */
-    private ItemStack tryAlternativeDestination(Location lastPipeLoc, Location primaryDest, ItemStack item) {
-        return tryAlternativeDestination(lastPipeLoc, primaryDest, item, new HashSet<>(), 0);
-    }
-
-    private ItemStack tryAlternativeDestination(Location lastPipeLoc, Location primaryDest, ItemStack item,
-                                                Set<Location> visitedTails, int depth) {
-        if (item == null || item.getAmount() <= 0) return null;
-        if (depth > MAX_FALLBACK_DEPTH) return item;
-
-        Location currentTail = normalizeLocation(lastPipeLoc);
-        if (!visitedTails.add(currentTail)) return item;
-
-        Block lastPipeBlock = lastPipeLoc.getBlock();
-        PipeData lastPipeData = getPipeData(lastPipeLoc);
-        // 链条来向（反方向），不向源头插入
-        BlockFace backFace = lastPipeData != null ? lastPipeData.facing().getOppositeFace() : null;
-        BlockFace primaryFace = lastPipeData != null ? lastPipeData.facing() : null;
-        boolean lastPipeIsCorner = lastPipeData != null
-                && lastPipeData.variant().getBehaviorType() == BehaviorType.CORNER;
-
-        ItemStack remaining = item.clone();
-        Location normalizedPrimary = primaryDest == null ? null : normalizeLocation(primaryDest);
-        for (BlockFace face : new BlockFace[]{
-                BlockFace.NORTH, BlockFace.SOUTH, BlockFace.EAST,
-                BlockFace.WEST, BlockFace.UP, BlockFace.DOWN}) {
-            if (remaining.getAmount() <= 0) return null;
-
-            // 跳过已尝试的主目标方向
-            if (face == backFace) continue;
-            if (!lastPipeIsCorner && face != primaryFace) continue;
-
-            Block adjacent = lastPipeBlock.getRelative(face);
-            if (!isTransferBlockReady(adjacent)) continue;
-            Location adjLoc = normalizeLocation(adjacent.getLocation());
-
-            // 跳过主目标（已满）
-            if (Objects.equals(adjLoc, normalizedPrimary)) continue;
-            // 先尝试直接相邻容器
-            ContainerAdapter adapter = ContainerAdapterRegistry.findAdapter(adjacent).orElse(null);
-            if (adapter != null && adapter.canReceive(adjacent, remaining)) {
-                ItemStack leftover = adapter.insert(adjacent, remaining);
-                if (leftover == null || leftover.getAmount() <= 0) return null;
-                remaining = leftover;
-                continue;
-            }
-
-            // 再尝试相邻管道分支（多层并联）。转角管道只允许在主出口方向接入，侧向不自动串接。
-            PipeData adjPipeData = getPipeData(adjLoc);
-            if (adjPipeData == null) continue;
-            if (!canRouteIntoAdjacentPipe(face, adjPipeData, face == primaryFace)) continue;
-
-            Set<Location> visited = new HashSet<>();
-            visited.add(normalizeLocation(lastPipeLoc));
-            CachedPath altPath = findDestination(adjLoc, adjPipeData.facing(), visited, new ArrayList<>(), Integer.MAX_VALUE);
-            if (altPath.unavailableBlock() != null) continue;
-
-            ItemStack branchRemaining = remaining;
-            if (altPath.destination() != null) {
-                Location altDestLoc = normalizeLocation(altPath.destination());
-                if (!Objects.equals(altDestLoc, normalizedPrimary)) {
-                    Block altDestBlock = altPath.destination().getBlock();
-                    ContainerAdapter altDestAdapter = ContainerAdapterRegistry.findAdapter(altDestBlock).orElse(null);
-                    if (altDestAdapter != null && altDestAdapter.canReceive(altDestBlock, branchRemaining)) {
-                        ItemStack leftover = altDestAdapter.insert(altDestBlock, branchRemaining);
-                        branchRemaining = (leftover == null || leftover.getAmount() <= 0) ? null : leftover;
-                    }
-                }
-            }
-
-            // 分支路径自身也可能包含转角并联输出，继续沿分支做一次并联分流。
-            if (branchRemaining != null && branchRemaining.getAmount() > 0) {
-                branchRemaining = tryCornerJunctionAlternatives(altPath, branchRemaining, visitedTails, depth + 1);
-            }
-            if (branchRemaining != null && branchRemaining.getAmount() > 0) {
-                branchRemaining = tryAlternativeDestination(
-                        altPath.lastPipeLocation(), altPath.destination(), branchRemaining, visitedTails, depth + 1);
-            }
-
-            if (branchRemaining == null || branchRemaining.getAmount() <= 0) return null;
-            remaining = branchRemaining;
         }
         return remaining;
     }
@@ -979,6 +860,7 @@ public class PipeManager {
     private CachedPath findDestination(Location pipeLocation, BlockFace facing,
                                        Set<Location> visited, List<Location> chain, int currentMin) {
         Location normalized = normalizeLocation(pipeLocation);
+        visited.add(normalized);
         chain.add(normalized);
 
         // 将本节点的传输速率纳入最小值计算

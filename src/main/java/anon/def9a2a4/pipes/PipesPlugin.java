@@ -44,7 +44,7 @@ import java.util.stream.Stream;
 public class PipesPlugin extends JavaPlugin implements Listener {
 
     // Bump when display construction changes independently of config.yml/display.yml.
-    private static final String RENDER_SCHEMA = "ce-boundary-aligned-6";
+    private static final String RENDER_SCHEMA = "ce-boundary-aligned-7";
     private static PipesPlugin instance;
     private static final UUID PIPE_PROFILE_UUID = UUID.fromString("00000000-0000-0000-0000-000000000001");
 
