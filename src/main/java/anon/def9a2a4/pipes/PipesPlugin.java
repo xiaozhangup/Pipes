@@ -11,6 +11,8 @@ import me.xiaozhangup.crab.flexible.FlexibleItem;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
 import net.kyori.adventure.text.format.TextDecoration;
+import net.momirealms.craftengine.bukkit.api.event.CraftEngineReloadEvent;
+import net.momirealms.craftengine.bukkit.plugin.BukkitCraftEngine;
 import org.bukkit.Bukkit;
 import org.bukkit.Material;
 import org.bukkit.World;
@@ -25,6 +27,8 @@ import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.SkullMeta;
 import org.bukkit.persistence.PersistentDataType;
 import org.bukkit.plugin.java.JavaPlugin;
+import org.bukkit.event.EventHandler;
+import org.bukkit.event.Listener;
 
 import java.io.File;
 import java.io.InputStream;
@@ -37,18 +41,17 @@ import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Stream;
 
-public class PipesPlugin extends JavaPlugin {
+public class PipesPlugin extends JavaPlugin implements Listener {
 
     // Bump when display construction changes independently of config.yml/display.yml.
-    private static final String RENDER_SCHEMA = "1";
+    private static final String RENDER_SCHEMA = "ce-boundary-aligned-6";
     private static PipesPlugin instance;
     private static final UUID PIPE_PROFILE_UUID = UUID.fromString("00000000-0000-0000-0000-000000000001");
 
     // Maps keyed by variant ID
     private final Map<String, ItemStack> pipeItems = new HashMap<>();
     private final Map<String, Map<BlockFace, ItemStack>> headItems = new HashMap<>();
-    private final Map<String, Map<BlockFace, ItemStack>> displayItems = new HashMap<>();
-    private final Map<String, Map<BlockFace, ItemStack>> directionalDisplayItems = new HashMap<>();
+    private PipeModels pipeModels;
 
     private final Map<World, PipeManager> pipeManager = new ConcurrentHashMap<>();
 
@@ -75,23 +78,22 @@ public class PipesPlugin extends JavaPlugin {
         }
 
         loadItems();
+        pipeModels = new PipeModels(this);
+        getServer().getPluginManager().registerEvents(pipeModels, this);
 
 //        recipeManager = new RecipeManager(this);
 //        recipeManager.registerRecipes();
 
         getServer().getPluginManager().registerEvents(new PipeListener(this, pipeManager), this);
-        worldManager = new WorldManager(this, pipeManager);
 //        recipeUnlockListener = new RecipeUnlockListener(this, recipeManager);
         cauldronConversionListener = new CauldronConversionListener(this);
         oxidationListener = new OxidationListener(this, pipeManager);
 //        conversionRecipeCraftListener = new ConversionRecipeCraftListener(this, recipeManager);
-        getServer().getPluginManager().registerEvents(worldManager, this);
 //        getServer().getPluginManager().registerEvents(recipeUnlockListener, this);
         getServer().getPluginManager().registerEvents(cauldronConversionListener, this);
         getServer().getPluginManager().registerEvents(oxidationListener, this);
 //        getServer().getPluginManager().registerEvents(conversionRecipeCraftListener, this);
         FlexibleItem.INSTANCE.registerHandler(new PipeItemHandler());
-
         getLogger().info("Pipes enabled!");
     }
 
@@ -132,10 +134,8 @@ public class PipesPlugin extends JavaPlugin {
 
                 loadConfigs();
                 loadItems();
+                initializeModels();
 //                recipeManager.registerRecipes();
-                for (PipeManager manager : pipeManager.values()) {
-                    manager.reload();
-                }
 
                 // Re-create unlock listener with new config and sync online players
 //                recipeUnlockListener = new RecipeUnlockListener(this, recipeManager);
@@ -484,8 +484,19 @@ public class PipesPlugin extends JavaPlugin {
         return pipeConfig;
     }
 
-    public DisplayConfig getDisplayConfig() {
-        return displayConfig;
+    public PipeModels getPipeModels() {
+        return pipeModels;
+    }
+
+    public void initializeModels() {
+        // Resolve all display models before touching any world's persistent entities.
+        pipeModels.reload(variantRegistry.getAllVariants());
+        if (worldManager == null) {
+            worldManager = new WorldManager(this, pipeManager);
+            getServer().getPluginManager().registerEvents(worldManager, this);
+        } else {
+            for (PipeManager manager : pipeManager.values()) manager.reload();
+        }
     }
 
     public long getRenderRevision() {
@@ -497,17 +508,18 @@ public class PipesPlugin extends JavaPlugin {
     }
 
     private void loadItems() {
-        pipeItems.clear();
-        headItems.clear();
-        displayItems.clear();
-        directionalDisplayItems.clear();
-
+        Map<String, ItemStack> nextItems = new HashMap<>();
+        Map<String, Map<BlockFace, ItemStack>> nextHeads = new HashMap<>();
         for (PipeVariant variant : variantRegistry.getAllVariants()) {
-            loadItemsForVariant(variant);
+            loadItemsForVariant(variant, nextItems, nextHeads);
         }
+        pipeItems.clear();
+        pipeItems.putAll(nextItems);
+        headItems.clear();
+        headItems.putAll(nextHeads);
     }
 
-    private void loadItemsForVariant(PipeVariant variant) {
+    private void loadItemsForVariant(PipeVariant variant, Map<String, ItemStack> items, Map<String, Map<BlockFace, ItemStack>> headTextures) {
         String variantId = variant.getId();
         DisplayConfig.TextureSet textures = displayConfig.getTextureSet(variant.getTextureSetId());
         if (textures == null) {
@@ -516,31 +528,14 @@ public class PipesPlugin extends JavaPlugin {
         }
 
         // Inventory item
-        pipeItems.put(variantId, createPipeItem(variant, textures.item()));
+        items.put(variantId, createPipeItem(variant, textures.item()));
 
         // Head block textures
         Map<BlockFace, ItemStack> heads = new HashMap<>();
         heads.put(BlockFace.NORTH, createPipeItem(variant, textures.getHeadTexture(BlockFace.NORTH)));
         heads.put(BlockFace.UP, createPipeItem(variant, textures.getHeadTexture(BlockFace.UP)));
         heads.put(BlockFace.DOWN, createPipeItem(variant, textures.getHeadTexture(BlockFace.DOWN)));
-        headItems.put(variantId, heads);
-
-        // Item display textures
-        Map<BlockFace, ItemStack> displays = new HashMap<>();
-        if (variant.getBehaviorType() == BehaviorType.CORNER) {
-            displays.put(BlockFace.NORTH, createPipeItem(variant, textures.getItemDisplayTexture(BlockFace.NORTH)));
-            // Load directional display items for corner pipes
-            Map<BlockFace, ItemStack> directionalDisplays = new HashMap<>();
-            directionalDisplays.put(BlockFace.NORTH, createPipeItem(variant, textures.getDirectionalDisplayTexture(BlockFace.NORTH)));
-            directionalDisplays.put(BlockFace.UP, createPipeItem(variant, textures.getDirectionalDisplayTexture(BlockFace.UP)));
-            directionalDisplays.put(BlockFace.DOWN, createPipeItem(variant, textures.getDirectionalDisplayTexture(BlockFace.DOWN)));
-            directionalDisplayItems.put(variantId, directionalDisplays);
-        } else {
-            displays.put(BlockFace.NORTH, createPipeItem(variant, textures.getItemDisplayTexture(BlockFace.NORTH)));
-            displays.put(BlockFace.UP, createPipeItem(variant, textures.getItemDisplayTexture(BlockFace.UP)));
-            displays.put(BlockFace.DOWN, createPipeItem(variant, textures.getItemDisplayTexture(BlockFace.DOWN)));
-        }
-        displayItems.put(variantId, displays);
+        headTextures.put(variantId, heads);
     }
 
     private ItemStack createPipeItem(PipeVariant variant, String textureData) {
@@ -594,44 +589,6 @@ public class PipesPlugin extends JavaPlugin {
         }
         ItemStack item = heads.get(facing);
         return item != null ? item : heads.get(BlockFace.NORTH);
-    }
-
-    public ItemStack getDisplayItem(PipeVariant variant, BlockFace facing) {
-        Map<BlockFace, ItemStack> displays = displayItems.get(variant.getId());
-        if (displays == null) return null;
-
-        if (variant.getBehaviorType() == BehaviorType.CORNER) {
-            return displays.get(BlockFace.NORTH);
-        }
-        // Regular pipes: use direction-specific texture
-        if (facing == BlockFace.UP) {
-            ItemStack item = displays.get(BlockFace.UP);
-            return item != null ? item : displays.get(BlockFace.NORTH);
-        } else if (facing == BlockFace.DOWN) {
-            ItemStack item = displays.get(BlockFace.DOWN);
-            return item != null ? item : displays.get(BlockFace.NORTH);
-        }
-        // Horizontal directions all use the same texture
-        return displays.get(BlockFace.NORTH);
-    }
-
-    /**
-     * Get the directional display item for corner pipes (the second, orientation-dependent display).
-     */
-    public ItemStack getDirectionalDisplayItem(PipeVariant variant, BlockFace facing) {
-        Map<BlockFace, ItemStack> displays = directionalDisplayItems.get(variant.getId());
-        if (displays == null) return null;
-
-        if (facing == BlockFace.UP) {
-            ItemStack item = displays.get(BlockFace.UP);
-            return item != null ? item : displays.get(BlockFace.NORTH);
-        }
-        if (facing == BlockFace.DOWN) {
-            ItemStack item = displays.get(BlockFace.DOWN);
-            return item != null ? item : displays.get(BlockFace.NORTH);
-        }
-        // Horizontal directions all use the same texture
-        return displays.get(BlockFace.NORTH);
     }
 
     /**
