@@ -2,6 +2,8 @@
 
 A Minecraft Paper plugin that adds pipes for transferring items between containers.
 
+CraftEngine model integration and build instructions: [管道模型接入](docs/craftengine-models.md).
+
 <!-- [Download on Modrinth](https://modrinth.com/plugin/pipes) -->
 
 ![](docs/assets/demo-1.png)

@@ -17,13 +17,13 @@ java {
 repositories {
     mavenCentral()
     mavenLocal()
-    maven {
-        name = "papermc"
-        url = uri("https://repo.papermc.io/repository/maven-public/")
-    }
+    maven("https://repo.papermc.io/repository/maven-public/")
+    maven("https://repo.momirealms.net/releases/")
 }
 
 dependencies {
+    compileOnly("net.momirealms:craft-engine-core:26.6")
+    compileOnly("net.momirealms:craft-engine-bukkit:26.6")
     compileOnly("me.xiaozhangup.octopus:octopus-api:26.3-R0.1-SNAPSHOT")
     compileOnly("me.xiaozhangup.crab:CrabKotlin:2.3.20:paper") { isTransitive = false }
     compileOnly(kotlin("stdlib"))
